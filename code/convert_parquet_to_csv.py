@@ -10,7 +10,7 @@ def convert_parquet_to_csv(parquet_file, csv_file):
         print(f"An error occurred during the conversion: {e}")
 
 
-parquet_file = "data/train-00000-of-00001.parquet"
-csv_file = "data/train-00000-of-00001.csv"
+parquet_file = "data/open_llm_leaderboard.parquet"
+csv_file = "data/open_llm_leaderboard.csv"
 
 convert_parquet_to_csv(parquet_file, csv_file)
