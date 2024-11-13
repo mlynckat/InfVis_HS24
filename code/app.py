@@ -89,8 +89,14 @@ if selected_family != "All":
 st.title("Open LLM Leaderboard Explorer")
 
 # Tabs for different views
-tab1, tab2, tab3, tab4 = st.tabs(
-    ["📊 Scatter Plot", "📋 Data Table", "🏆 Top Performers", "📈 Model Analysis"]
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    [
+        "📊 Scatter Plot",
+        "📋 Data Table",
+        "🏆 Top Performers",
+        "📈 Model Analysis",
+        "🔍 Model Deep Dive",
+    ]
 )
 
 with tab1:
@@ -258,6 +264,13 @@ with tab1:
 with tab2:
     st.header("Data Explorer")
 
+    # Add search functionality
+    search_term = st.text_input(
+        "Search in data",
+        placeholder="Enter text to search across all columns...",
+        help="Search is case-insensitive and matches partial text",
+    )
+
     # Column selector
     all_columns = df.columns.tolist()
     selected_columns = st.multiselect(
@@ -273,6 +286,19 @@ with tab2:
             "MATH Lvl 5",
         ],
     )
+
+    # Filter dataframe based on search term
+    if search_term:
+        mask = pd.DataFrame(False, index=filtered_df.index, columns=["match"])
+        for column in filtered_df.columns:
+            # Convert column to string and search for term (case-insensitive)
+            mask["match"] |= (
+                filtered_df[column]
+                .astype(str)
+                .str.contains(search_term, case=False, na=False)
+            )
+        filtered_df = filtered_df[mask["match"]]
+        st.info(f"Found {len(filtered_df)} matches for '{search_term}'")
 
     # Show filtered dataframe
     if selected_columns:
@@ -830,6 +856,225 @@ with tab4:
         st.warning(
             f"No models found for {analysis_architecture} with {selected_size} parameters"
         )
+
+with tab5:
+    st.header("Model Deep Dive")
+
+    # Function to display model details
+    def display_model_details(model_name):
+        model_data = filtered_df[filtered_df["Eval Name"] == model_name].iloc[0]
+
+        # Create three columns for key metrics
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric("Average Score", f"{model_data['Average ⬆️']:.2f}")
+        with col2:
+            st.metric("Model Size", f"{model_data['#Params (B)']:.1f}B")
+        with col3:
+            st.metric("Architecture", model_data["Architecture"])
+
+        # Create expandable section for all metrics
+        with st.expander("View all metrics"):
+            # Convert model data to a more readable format
+            details_df = pd.DataFrame(
+                {"Metric": model_data.index, "Value": model_data.values}
+            )
+
+            # Filter out any non-numeric metrics for the performance section
+            numeric_metrics = details_df[
+                details_df["Value"].apply(lambda x: isinstance(x, (int, float)))
+            ]
+
+            st.dataframe(numeric_metrics, use_container_width=True, hide_index=True)
+
+    # Model selector(s)
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        # Primary model selector
+        primary_model = st.selectbox(
+            "Select primary model",
+            options=sorted(filtered_df["Eval Name"].tolist(), key=str.lower),
+            key="primary_model",
+        )
+
+    with col2:
+        # Option to enable comparison
+        enable_comparison = st.checkbox("Compare models", value=False)
+
+    # Additional model selectors if comparison is enabled
+    if enable_comparison:
+        col1, col2 = st.columns(2)
+        with col1:
+            compare_model1 = st.selectbox(
+                "Compare with model 1",
+                options=["None"]
+                + [
+                    x
+                    for x in sorted(filtered_df["Eval Name"].tolist(), key=str.lower)
+                    if x != primary_model
+                ],
+                key="compare_model1",
+            )
+        with col2:
+            compare_model2 = st.selectbox(
+                "Compare with model 2",
+                options=["None"]
+                + [
+                    x
+                    for x in sorted(filtered_df["Eval Name"].tolist(), key=str.lower)
+                    if x
+                    not in [
+                        primary_model,
+                        compare_model1 if compare_model1 != "None" else "",
+                    ]
+                ],
+                key="compare_model2",
+            )
+
+    # Define metrics for radar chart
+    radar_metrics = [
+        "IFEval",
+        "BBH",
+        "MATH Lvl 5",
+        "GPQA",
+        "MUSR",
+        "MMLU-PRO",
+        "Average ⬆️",
+    ]
+
+    # Create radar chart
+    fig = go.Figure()
+
+    # Function to add model to radar chart
+    def add_model_to_radar(model_name, color, name=None):
+        model_data = filtered_df[filtered_df["Eval Name"] == model_name].iloc[0]
+        values = [model_data[metric] for metric in radar_metrics]
+        # Add the first value again to close the polygon
+        values.append(values[0])
+        metrics_plot = radar_metrics + [radar_metrics[0]]
+
+        fig.add_trace(
+            go.Scatterpolar(
+                r=values,
+                theta=metrics_plot,
+                name=name or model_name,
+                line=dict(color=color),
+                fill="toself",
+                opacity=0.6,
+            )
+        )
+
+    # Add average performance trace
+    avg_values = [filtered_df[metric].mean() for metric in radar_metrics]
+    avg_values.append(avg_values[0])  # Close the polygon
+    metrics_plot = radar_metrics + [radar_metrics[0]]
+
+    fig.add_trace(
+        go.Scatterpolar(
+            r=avg_values,
+            theta=metrics_plot,
+            name="Overall Average",
+            line=dict(color="gray", dash="dash"),
+            fill="none",
+            opacity=0.7,
+        )
+    )
+
+    # Add primary model
+    add_model_to_radar(primary_model, "#1f77b4")
+
+    # Add comparison models if enabled
+    if enable_comparison:
+        if compare_model1 != "None":
+            add_model_to_radar(compare_model1, "#ff7f0e")
+        if compare_model2 != "None":
+            add_model_to_radar(compare_model2, "#2ca02c")
+
+    # Update layout
+    fig.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+        showlegend=True,
+        height=600,
+        title="Model Performance Comparison",
+    )
+
+    # Display radar chart
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Display detailed model information
+    st.subheader("Model Details")
+
+    # Create list of models to show, filtering out "None"
+    if enable_comparison:
+        models_to_show = [
+            m for m in [primary_model, compare_model1, compare_model2] if m != "None"
+        ]
+    else:
+        models_to_show = [primary_model]
+
+    # Create comparison dataframe
+    comparison_data = []
+    for metric in radar_metrics + [
+        "Average ⬆️",
+        "#Params (B)",
+        "Architecture",
+        "Model Family",
+        "Hub ❤️",
+    ]:
+        row = {"Metric": metric}
+        # Add value for each model
+        for model in models_to_show:
+            model_data = filtered_df[filtered_df["Eval Name"] == model].iloc[0]
+            # Format numbers with 2 decimal places
+            if isinstance(model_data[metric], (int, float)):
+                if metric in radar_metrics:
+                    avg = filtered_df[metric].mean()
+                    diff = model_data[metric] - avg
+                    value = f"{model_data[metric]:.2f} ({diff:+.2f})"
+                elif metric == "#Params (B)":
+                    value = f"{model_data[metric]:.1f}B"
+                else:
+                    value = f"{model_data[metric]:.2f}"
+            else:
+                value = str(model_data[metric])
+            row[model] = value
+        comparison_data.append(row)
+
+    # Create and display comparison table
+    comparison_df = pd.DataFrame(comparison_data)
+
+    # Style the dataframe
+    def highlight_differences(val):
+        try:
+            if isinstance(val, str) and "(" in val:
+                # Extract the difference value
+                diff_str = val.split("(")[1].rstrip(")").rstrip("B")
+                diff = float(diff_str)
+                if diff > 0:
+                    return "background-color: rgba(0, 255, 0, 0.1)"
+                elif diff < 0:
+                    return "background-color: rgba(255, 0, 0, 0.1)"
+        except (IndexError, ValueError):
+            pass
+        return ""
+
+    # Apply styling and display
+    styled_df = comparison_df.style.apply(
+        lambda x: [highlight_differences(val) for val in x]
+    )
+    st.dataframe(
+        styled_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Metric": st.column_config.TextColumn("Metric", width="medium"),
+            **{
+                model: st.column_config.TextColumn(model, width="medium")
+                for model in models_to_show
+            },
+        },
+    )
 
 # Footer
 st.markdown("---")
