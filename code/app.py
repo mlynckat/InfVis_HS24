@@ -89,13 +89,14 @@ if selected_family != "All":
 st.title("Open LLM Leaderboard Explorer")
 
 # Tabs for different views
-tab1, tab2, tab3, tab4, tab5 = st.tabs(
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
     [
         "📊 Scatter Plot",
         "📋 Data Table",
         "🏆 Top Performers",
         "📈 Model Analysis",
         "🔍 Model Deep Dive",
+        "🔀 Parallel Plot",
     ]
 )
 
@@ -495,255 +496,270 @@ with tab3:
 with tab4:
     st.header("Architecture Performance Analysis")
 
-    # Add option to analyze all architectures or a specific one
-    analysis_type = st.radio(
-        "Analysis Type", ["Single Architecture", "All Architectures"]
+    # Add new radio button to include heatmap option
+    analysis_view = st.radio(
+        "Analysis View",
+        ["Performance Comparison", "Model Heatmap", "Performance Efficiency"],
+        horizontal=True,
     )
 
-    if analysis_type == "Single Architecture":
-        # Existing single architecture analysis code
-        if selected_architecture == "All":
-            analysis_architecture = st.selectbox(
-                "Select Architecture",
-                options=sorted(df["Architecture"].unique().tolist()),
-                index=0,
-            )
-            # Apply size filter if selected
-            architecture_df = df[df["Architecture"] == analysis_architecture]
-            architecture_df = architecture_df[
-                (
-                    architecture_df["#Params (B)"].between(
-                        selected_size[0], selected_size[1]
-                    )
-                )
-                & (architecture_df["#Params (B)"] != -1)
-            ]
-        else:
-            analysis_architecture = selected_architecture
-            architecture_df = filtered_df
+    if analysis_view == "Model Heatmap":
+        # Add radio button for normalization reference
+        normalization_basis = st.radio(
+            "Normalize scores against:",
+            ["Filtered Dataset", "Complete Dataset"],
+            horizontal=True,
+            help="Choose whether to calculate z-scores relative to all models or just the filtered subset",
+        )
 
-        # Show size filter status
+        # Select metrics for heatmap
+        metrics_for_heatmap = [
+            "IFEval",
+            "BBH",
+            "MATH Lvl 5",
+            "GPQA",
+            "MUSR",
+            "MMLU-PRO",
+            "Average ⬆️",
+        ]
+
+        # Create heatmap data
+        heatmap_data = filtered_df[
+            ["Eval Name", "Architecture"] + metrics_for_heatmap
+        ].copy()
+
+        # Normalize scores within each metric (z-score normalization)
+        reference_df = df if normalization_basis == "Complete Dataset" else filtered_df
+
+        for metric in metrics_for_heatmap:
+            mean = reference_df[metric].mean()
+            std = reference_df[metric].std()
+            heatmap_data[metric] = (heatmap_data[metric] - mean) / std
+
+        # Add info about normalization basis
         st.info(
-            f"Showing analysis for {len(filtered_df)} models between {selected_size[0]}B and {selected_size[1]}B parameters"
+            f"""
+            Showing {len(filtered_df)} models, normalized against {len(reference_df)} models.
+            Mean and standard deviation are calculated from the {normalization_basis.lower()}.
+        """
         )
 
-    else:  # All Architectures analysis
-        architecture_df = (
-            filtered_df
-            if selected_architecture == "All"
-            else df[df["Architecture"].isin([selected_architecture])]
-        )
+        # Create hierarchical clustering
+        from scipy.cluster.hierarchy import linkage, dendrogram
 
-        # Show comparative metrics across architectures
-        st.subheader("Architecture Comparison")
+        model_linkage = linkage(heatmap_data[metrics_for_heatmap], method="ward")
 
-        # Calculate average performance for each architecture
-        arch_comparison = []
-        for arch in architecture_df["Architecture"].unique():
-            arch_data = architecture_df[architecture_df["Architecture"] == arch]
-            metrics_avg = {
-                "Architecture": arch,
-                "Number of Models": len(arch_data),
-                "Avg Model Size": arch_data["#Params (B)"].mean(),
-                "Average Score": arch_data["Average ⬆️"].mean(),
-                "Max Score": arch_data["Average ⬆️"].max(),
-            }
-            arch_comparison.append(metrics_avg)
-
-        comparison_df = pd.DataFrame(arch_comparison)
-
-        # Display summary metrics
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Architectures", len(comparison_df))
-        with col2:
-            st.metric("Total Models", comparison_df["Number of Models"].sum())
-        with col3:
-            st.metric(
-                "Best Architecture",
-                comparison_df.loc[
-                    comparison_df["Average Score"].idxmax(), "Architecture"
-                ],
-            )
-
-        # Create comparison visualizations
-        fig1 = px.bar(
-            comparison_df,
-            x="Architecture",
-            y="Average Score",
-            title="Average Performance by Architecture",
-            template="plotly_white",
-        )
-        fig1.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig1, use_container_width=True)
-
-        # Model size distribution by architecture
-        fig2 = px.box(
-            architecture_df,
-            x="Architecture",
-            y="#Params (B)",
-            title="Model Size Distribution by Architecture",
-            template="plotly_white",
-        )
-        fig2.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig2, use_container_width=True)
-
-        # Detailed metrics table
-        st.subheader("Architecture Metrics")
-        comparison_df = comparison_df.round(2)
-        st.dataframe(
-            comparison_df.sort_values("Average Score", ascending=False),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-    # Continue with existing performance metrics and specialization analysis...
-    performance_metrics = [
-        "Average ⬆️",
-        "IFEval",
-        "BBH",
-        "MATH Lvl 5",
-        "GPQA",
-        "MUSR",
-        "MMLU-PRO",
-    ]
-
-    # Only proceed if there are models to analyze
-    if len(architecture_df) > 0:
-        # Calculate differences from average for each metric
-        model_data = []
-        for metric in performance_metrics:
-            overall_avg = df[metric].mean()
-            arch_avg = architecture_df[metric].mean()
-            diff_from_avg = arch_avg - overall_avg
-            model_data.append(
-                {
-                    "Metric": metric,
-                    "Difference": diff_from_avg,
-                    "Architecture Average": arch_avg,
-                    "Overall Average": overall_avg,
-                }
-            )
-
-        # Create DataFrame for plotting
-        comparison_df = pd.DataFrame(model_data)
-
-        # Create bar chart
+        # Create figure with dendrograms
         fig = go.Figure()
 
-        # Add bars for difference from average
-        fig.add_trace(
-            go.Bar(
-                x=comparison_df["Metric"],
-                y=comparison_df["Difference"],
-                name="Difference from Average",
-                marker_color=comparison_df["Difference"].apply(
-                    lambda x: "green" if x > 0 else "red"
-                ),
-            )
+        # Add heatmap
+        heatmap = go.Heatmap(
+            z=heatmap_data[metrics_for_heatmap].values,
+            x=metrics_for_heatmap,
+            y=heatmap_data["Eval Name"],
+            colorscale="RdBu",
+            zmid=0,
+            text=heatmap_data[metrics_for_heatmap].round(2).values,
+            texttemplate="%{text}",
+            textfont={"size": 10},
+            hoverongaps=False,
+            hovertemplate="Model: %{y}<br>Metric: %{x}<br>Z-score: %{z:.2f}<extra></extra>",
         )
 
-        # Add horizontal line at y=0
-        fig.add_hline(y=0, line_dash="dash", line_color="gray")
+        fig.add_trace(heatmap)
 
-        # Update layout with conditional title
-        if analysis_type == "Single Architecture":
-            title = (
-                f"{analysis_architecture} Architecture Performance vs. Overall Average"
-            )
-            if selected_size != "All":
-                title += f" ({selected_size} models)"
-        else:
-            title = "Selected Architectures Performance vs. Overall Average"
-            if selected_size != "All":
-                title += f" ({selected_size} models)"
-
+        # Update layout
         fig.update_layout(
-            title=title,
+            title="Model Performance Heatmap (Z-scores)",
+            height=max(
+                600, len(filtered_df) * 20
+            ),  # Dynamic height based on number of models
             xaxis_title="Metrics",
-            yaxis_title="Difference from Average",
-            height=500,
-            showlegend=False,
+            yaxis_title="Models",
+            yaxis={
+                "categoryorder": "array",
+                "categoryarray": heatmap_data["Eval Name"],
+            },
             template="plotly_white",
         )
 
+        # Display the plot
         st.plotly_chart(fig, use_container_width=True)
 
-        # Create two columns for metrics and details
-        col1, col2 = st.columns(2)
+        # Add explanation
+        st.info(
+            """
+        This heatmap shows normalized performance scores (z-scores) across different metrics:
+        - Red indicates below-average performance
+        - Blue indicates above-average performance
+        - The intensity represents how far from the average the score is
+        - Models are clustered based on similar performance patterns
+        """
+        )
 
-        with col1:
-            # Show detailed metrics table
-            st.subheader("Detailed Metrics")
+    elif analysis_view == "Performance Efficiency":
+        # Calculate efficiency score (performance per billion parameters)
+        efficiency_df = filtered_df.copy()
+        efficiency_df["Efficiency"] = (
+            efficiency_df["Average ⬆️"] / efficiency_df["#Params (B)"]
+        )
 
-            # Format the numbers to 2 decimal places
-            comparison_df_display = comparison_df.copy()
-            for col in ["Difference", "Architecture Average", "Overall Average"]:
-                comparison_df_display[col] = comparison_df_display[col].round(2)
+        # Find the most efficient models
+        top_efficient = efficiency_df.nlargest(10, "Efficiency")
 
-            st.dataframe(
-                comparison_df_display, use_container_width=True, hide_index=True
+        # Create scatter plot with efficiency highlighted
+        fig = px.scatter(
+            efficiency_df,
+            x="#Params (B)",
+            y="Average ⬆️",
+            color="Architecture",
+            hover_data=["Eval Name", "Efficiency"],
+            title="Model Performance vs Size (Highlighting Efficient Models)",
+            template="plotly_white",
+        )
+
+        # Add annotations for top efficient models
+        for _, model in top_efficient.iterrows():
+            fig.add_annotation(
+                x=model["#Params (B)"],
+                y=model["Average ⬆️"],
+                text=model["Eval Name"],
+                showarrow=True,
+                arrowhead=1,
             )
 
-        with col2:
-            # Show architecture details
-            st.subheader("Architecture Details")
+        # Add trend line
+        fig.add_trace(
+            px.scatter(
+                efficiency_df, x="#Params (B)", y="Average ⬆️", trendline="lowess"
+            ).data[1]
+        )
 
-            # Calculate architecture statistics
-            arch_stats = [
-                {"Metric": "📊 Total Models", "Value": str(len(architecture_df))},
-                {
-                    "Metric": "📏 Average Size",
-                    "Value": f"{architecture_df['#Params (B)'].mean():.1f}B",
-                },
-                {
-                    "Metric": "📐 Size Range",
-                    "Value": f"{architecture_df['#Params (B)'].min():.1f}B - {architecture_df['#Params (B)'].max():.1f}B",
-                },
-                {
-                    "Metric": "👥 Most Common Family",
-                    "Value": str(architecture_df["Model Family"].mode().iloc[0]),
-                },
-                {
-                    "Metric": "🏷️ Most Common Type",
-                    "Value": str(
-                        architecture_df["Type"].mode().iloc[0]
-                        if "Type" in architecture_df.columns
-                        else "N/A"
-                    ),
-                },
-            ]
+        # Add unique key for this plot
+        st.plotly_chart(fig, use_container_width=True, key="efficiency_scatter")
 
-            # Create DataFrame explicitly as strings
-            stats_df = pd.DataFrame(arch_stats)
-            stats_df = stats_df.astype(str)  # Ensure all values are strings
-
-            # Display with explicit column configuration
-            st.dataframe(
-                stats_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Metric": st.column_config.TextColumn("Metric", width="medium"),
-                    "Value": st.column_config.TextColumn("Value", width="medium"),
-                },
-            )
-
-        # Show all models in this architecture
-        st.subheader("Models in this Architecture")
+        # Show detailed stats for efficient models
+        st.subheader("Most Efficient Models")
         st.dataframe(
-            architecture_df[["Eval Name", "#Params (B)", "Average ⬆️"]].sort_values(
-                "Average ⬆️", ascending=False
-            ),
-            use_container_width=True,
+            top_efficient[
+                [
+                    "Eval Name",
+                    "#Params (B)",
+                    "Average ⬆️",
+                    "Efficiency",
+                    "Architecture",
+                    "Model Family",
+                ]
+            ].round(2),
             hide_index=True,
         )
 
-        # Add a new section for specialization analysis
-        st.subheader("Model Specialization Analysis")
+    else:
+        # Add option to analyze all architectures or a specific one
+        analysis_type = st.radio(
+            "Analysis Type", ["Single Architecture", "All Architectures"]
+        )
 
-        # Calculate specialization scores for each model
+        if analysis_type == "Single Architecture":
+            # Existing single architecture analysis code
+            if selected_architecture == "All":
+                analysis_architecture = st.selectbox(
+                    "Select Architecture",
+                    options=sorted(df["Architecture"].unique().tolist()),
+                    index=0,
+                )
+                # Apply size filter if selected
+                architecture_df = df[df["Architecture"] == analysis_architecture]
+                architecture_df = architecture_df[
+                    (
+                        architecture_df["#Params (B)"].between(
+                            selected_size[0], selected_size[1]
+                        )
+                    )
+                    & (architecture_df["#Params (B)"] != -1)
+                ]
+            else:
+                analysis_architecture = selected_architecture
+                architecture_df = filtered_df
+
+            # Show size filter status
+            st.info(
+                f"Showing analysis for {len(filtered_df)} models between {selected_size[0]}B and {selected_size[1]}B parameters"
+            )
+
+        else:  # All Architectures analysis
+            architecture_df = (
+                filtered_df
+                if selected_architecture == "All"
+                else df[df["Architecture"].isin([selected_architecture])]
+            )
+
+            # Show comparative metrics across architectures
+            st.subheader("Architecture Comparison")
+
+            # Calculate average performance for each architecture
+            arch_comparison = []
+            for arch in architecture_df["Architecture"].unique():
+                arch_data = architecture_df[architecture_df["Architecture"] == arch]
+                metrics_avg = {
+                    "Architecture": arch,
+                    "Number of Models": len(arch_data),
+                    "Avg Model Size": arch_data["#Params (B)"].mean(),
+                    "Average Score": arch_data["Average ⬆️"].mean(),
+                    "Max Score": arch_data["Average ⬆️"].max(),
+                }
+                arch_comparison.append(metrics_avg)
+
+            comparison_df = pd.DataFrame(arch_comparison)
+
+            # Display summary metrics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Architectures", len(comparison_df))
+            with col2:
+                st.metric("Total Models", comparison_df["Number of Models"].sum())
+            with col3:
+                st.metric(
+                    "Best Architecture",
+                    comparison_df.loc[
+                        comparison_df["Average Score"].idxmax(), "Architecture"
+                    ],
+                )
+
+            # Create comparison visualizations
+            fig1 = px.bar(
+                comparison_df,
+                x="Architecture",
+                y="Average Score",
+                title="Average Performance by Architecture",
+                template="plotly_white",
+            )
+            fig1.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig1, use_container_width=True)
+
+            # Model size distribution by architecture
+            fig2 = px.box(
+                architecture_df,
+                x="Architecture",
+                y="#Params (B)",
+                title="Model Size Distribution by Architecture",
+                template="plotly_white",
+            )
+            fig2.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig2, use_container_width=True)
+
+            # Detailed metrics table
+            st.subheader("Architecture Metrics")
+            comparison_df = comparison_df.round(2)
+            st.dataframe(
+                comparison_df.sort_values("Average Score", ascending=False),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        # Continue with existing performance metrics and specialization analysis...
         performance_metrics = [
+            "Average ⬆️",
             "IFEval",
             "BBH",
             "MATH Lvl 5",
@@ -752,110 +768,256 @@ with tab4:
             "MMLU-PRO",
         ]
 
-        def calculate_specialization(row):
-            # Calculate normalized differences from mean for each metric
-            diffs = []
+        # Only proceed if there are models to analyze
+        if len(architecture_df) > 0:
+            # Calculate differences from average for each metric
+            model_data = []
             for metric in performance_metrics:
-                metric_mean = df[metric].mean()
-                metric_std = df[metric].std()
-                normalized_diff = (
-                    (row[metric] - metric_mean) / metric_std if metric_std != 0 else 0
+                overall_avg = df[metric].mean()
+                arch_avg = architecture_df[metric].mean()
+                diff_from_avg = arch_avg - overall_avg
+                model_data.append(
+                    {
+                        "Metric": metric,
+                        "Difference": diff_from_avg,
+                        "Architecture Average": arch_avg,
+                        "Overall Average": overall_avg,
+                    }
                 )
-                diffs.append(normalized_diff)
 
-            # Calculate specialization score and identify specialized areas
-            specialization_score = np.std(diffs)
-            specialized_metrics = []
-            for metric, diff in zip(performance_metrics, diffs):
-                if abs(diff) > 1:  # More than 1 standard deviation from mean
-                    specialized_metrics.append(f"{metric} ({diff:+.2f}σ)")
+            # Create DataFrame for plotting
+            comparison_df = pd.DataFrame(model_data)
 
-            return pd.Series(
-                {
-                    "specialization_score": specialization_score,
-                    "specialized_metrics": (
-                        ", ".join(specialized_metrics)
-                        if specialized_metrics
-                        else "None"
+            # Create bar chart
+            fig = go.Figure()
+
+            # Add bars for difference from average
+            fig.add_trace(
+                go.Bar(
+                    x=comparison_df["Metric"],
+                    y=comparison_df["Difference"],
+                    name="Difference from Average",
+                    marker_color=comparison_df["Difference"].apply(
+                        lambda x: "green" if x > 0 else "red"
                     ),
-                }
+                )
             )
 
-        # Calculate specialization for filtered models
-        specialization_results = architecture_df.apply(calculate_specialization, axis=1)
-        specialization_df = pd.concat(
-            [
-                architecture_df[
-                    [
-                        "Eval Name",
-                        "Architecture",
-                        "#Params (B)",
-                        "Average ⬆️",
-                        "Model Family",
-                    ]
+            # Add horizontal line at y=0
+            fig.add_hline(y=0, line_dash="dash", line_color="gray")
+
+            # Update layout with conditional title
+            if analysis_type == "Single Architecture":
+                title = f"{analysis_architecture} Architecture Performance vs. Overall Average"
+                if selected_size != "All":
+                    title += f" ({selected_size} models)"
+            else:
+                title = "Selected Architectures Performance vs. Overall Average"
+                if selected_size != "All":
+                    title += f" ({selected_size} models)"
+
+            fig.update_layout(
+                title=title,
+                xaxis_title="Metrics",
+                yaxis_title="Difference from Average",
+                height=500,
+                showlegend=False,
+                template="plotly_white",
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Create two columns for metrics and details
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # Show detailed metrics table
+                st.subheader("Detailed Metrics")
+
+                # Format the numbers to 2 decimal places
+                comparison_df_display = comparison_df.copy()
+                for col in ["Difference", "Architecture Average", "Overall Average"]:
+                    comparison_df_display[col] = comparison_df_display[col].round(2)
+
+                st.dataframe(
+                    comparison_df_display, use_container_width=True, hide_index=True
+                )
+
+            with col2:
+                # Show architecture details
+                st.subheader("Architecture Details")
+
+                # Calculate architecture statistics
+                arch_stats = [
+                    {"Metric": "📊 Total Models", "Value": str(len(architecture_df))},
+                    {
+                        "Metric": "📏 Average Size",
+                        "Value": f"{architecture_df['#Params (B)'].mean():.1f}B",
+                    },
+                    {
+                        "Metric": "📐 Size Range",
+                        "Value": f"{architecture_df['#Params (B)'].min():.1f}B - {architecture_df['#Params (B)'].max():.1f}B",
+                    },
+                    {
+                        "Metric": "👥 Most Common Family",
+                        "Value": str(architecture_df["Model Family"].mode().iloc[0]),
+                    },
+                    {
+                        "Metric": "🏷️ Most Common Type",
+                        "Value": str(
+                            architecture_df["Type"].mode().iloc[0]
+                            if "Type" in architecture_df.columns
+                            else "N/A"
+                        ),
+                    },
+                ]
+
+                # Create DataFrame explicitly as strings
+                stats_df = pd.DataFrame(arch_stats)
+                stats_df = stats_df.astype(str)  # Ensure all values are strings
+
+                # Display with explicit column configuration
+                st.dataframe(
+                    stats_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Metric": st.column_config.TextColumn("Metric", width="medium"),
+                        "Value": st.column_config.TextColumn("Value", width="medium"),
+                    },
+                )
+
+            # Show all models in this architecture
+            st.subheader("Models in this Architecture")
+            st.dataframe(
+                architecture_df[["Eval Name", "#Params (B)", "Average ⬆️"]].sort_values(
+                    "Average ⬆️", ascending=False
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            # Add a new section for specialization analysis
+            st.subheader("Model Specialization Analysis")
+
+            # Calculate specialization scores for each model
+            performance_metrics = [
+                "IFEval",
+                "BBH",
+                "MATH Lvl 5",
+                "GPQA",
+                "MUSR",
+                "MMLU-PRO",
+            ]
+
+            def calculate_specialization(row):
+                # Calculate normalized differences from mean for each metric
+                diffs = []
+                for metric in performance_metrics:
+                    metric_mean = df[metric].mean()
+                    metric_std = df[metric].std()
+                    normalized_diff = (
+                        (row[metric] - metric_mean) / metric_std
+                        if metric_std != 0
+                        else 0
+                    )
+                    diffs.append(normalized_diff)
+
+                # Calculate specialization score and identify specialized areas
+                specialization_score = np.std(diffs)
+                specialized_metrics = []
+                for metric, diff in zip(performance_metrics, diffs):
+                    if abs(diff) > 1:  # More than 1 standard deviation from mean
+                        specialized_metrics.append(f"{metric} ({diff:+.2f}σ)")
+
+                return pd.Series(
+                    {
+                        "specialization_score": specialization_score,
+                        "specialized_metrics": (
+                            ", ".join(specialized_metrics)
+                            if specialized_metrics
+                            else "None"
+                        ),
+                    }
+                )
+
+            # Calculate specialization for filtered models
+            specialization_results = architecture_df.apply(
+                calculate_specialization, axis=1
+            )
+            specialization_df = pd.concat(
+                [
+                    architecture_df[
+                        [
+                            "Eval Name",
+                            "Architecture",
+                            "#Params (B)",
+                            "Average ⬆️",
+                            "Model Family",
+                        ]
+                    ],
+                    specialization_results,
                 ],
-                specialization_results,
-            ],
-            axis=1,
-        ).sort_values("specialization_score", ascending=False)
+                axis=1,
+            ).sort_values("specialization_score", ascending=False)
 
-        # Display results in a clean layout
-        col1, col2 = st.columns([1, 2])
+            # Display results in a clean layout
+            col1, col2 = st.columns([1, 2])
 
-        with col1:
-            st.write("📈 Most Specialized Models")
-            st.dataframe(
-                specialization_df[
-                    ["Eval Name", "#Params (B)", "specialization_score"]
-                ].head(),
-                use_container_width=True,
-                hide_index=True,
+            with col1:
+                st.write("📈 Most Specialized Models")
+                st.dataframe(
+                    specialization_df[
+                        ["Eval Name", "#Params (B)", "specialization_score"]
+                    ].head(),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+                st.write("📉 Most Generalist Models")
+                st.dataframe(
+                    specialization_df[
+                        ["Eval Name", "#Params (B)", "specialization_score"]
+                    ].tail(),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            with col2:
+                st.write("🔍 Detailed Analysis")
+                st.dataframe(
+                    specialization_df[
+                        [
+                            "Eval Name",
+                            "#Params (B)",
+                            "Model Family",
+                            "specialization_score",
+                            "specialized_metrics",
+                        ]
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            # Visualize specialization distribution
+            fig = px.histogram(
+                specialization_df,
+                x="specialization_score",
+                title="Distribution of Model Specialization",
+                template="plotly_white",
+                nbins=20,
             )
-
-            st.write("📉 Most Generalist Models")
-            st.dataframe(
-                specialization_df[
-                    ["Eval Name", "#Params (B)", "specialization_score"]
-                ].tail(),
-                use_container_width=True,
-                hide_index=True,
+            fig.update_layout(
+                xaxis_title="Specialization Score",
+                yaxis_title="Number of Models",
+                showlegend=False,
+                height=400,
             )
-
-        with col2:
-            st.write("🔍 Detailed Analysis")
-            st.dataframe(
-                specialization_df[
-                    [
-                        "Eval Name",
-                        "#Params (B)",
-                        "Model Family",
-                        "specialization_score",
-                        "specialized_metrics",
-                    ]
-                ],
-                use_container_width=True,
-                hide_index=True,
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning(
+                f"No models found for {analysis_architecture} with {selected_size} parameters"
             )
-
-        # Visualize specialization distribution
-        fig = px.histogram(
-            specialization_df,
-            x="specialization_score",
-            title="Distribution of Model Specialization",
-            template="plotly_white",
-            nbins=20,
-        )
-        fig.update_layout(
-            xaxis_title="Specialization Score",
-            yaxis_title="Number of Models",
-            showlegend=False,
-            height=400,
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.warning(
-            f"No models found for {analysis_architecture} with {selected_size} parameters"
-        )
 
 with tab5:
     st.header("Model Deep Dive")
@@ -1081,3 +1243,88 @@ st.markdown("---")
 st.markdown(
     "Data source: [Open LLM Leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_llm_leaderboard)"
 )
+
+# Add after the last tab (tab5)
+with tab6:
+    st.header("Parallel Coordinates Analysis")
+
+    # Define metrics for parallel coordinates
+    parallel_metrics = [
+        "#Params (B)",
+        "Average ⬆️",
+        "IFEval",
+        "BBH",
+        "MATH Lvl 5",
+        "GPQA",
+        "MUSR",
+        "MMLU-PRO",
+    ]
+
+    # Create a copy of the filtered dataframe with only numeric columns
+    plot_df = filtered_df.copy()
+
+    # Add architecture as a numeric mapping
+    architectures = plot_df["Architecture"].unique()
+    arch_mapping = {arch: i for i, arch in enumerate(architectures)}
+    plot_df["Architecture_num"] = plot_df["Architecture"].map(arch_mapping)
+
+    # Create parallel coordinates plot
+    fig = go.Figure(
+        data=go.Parcoords(
+            line=dict(
+                color=plot_df["Average ⬆️"],
+                colorscale="Viridis_r",
+                showscale=True,
+                cmin=plot_df["Average ⬆️"].min(),
+                cmax=plot_df["Average ⬆️"].max(),
+            ),
+            dimensions=[
+                # Add Architecture as a categorical dimension
+                dict(
+                    range=[0, len(architectures) - 1],
+                    label="Architecture",
+                    values=plot_df["Architecture_num"],
+                    ticktext=architectures,
+                    tickvals=list(range(len(architectures))),
+                ),
+                # Add numeric dimensions
+                *[
+                    dict(
+                        range=[plot_df[col].min(), plot_df[col].max()],
+                        label=col,
+                        values=plot_df[col],
+                    )
+                    for col in parallel_metrics
+                ],
+            ],
+        )
+    )
+
+    # Update layout
+    fig.update_layout(
+        title="Model Performance Across Multiple Metrics",
+        height=600,
+        template="plotly_white",
+    )
+
+    # Display the plot
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Add explanation
+    st.info(
+        """
+    This parallel coordinates plot shows how models perform across multiple metrics simultaneously:
+    - Each vertical axis represents a different metric
+    - Each line represents a model
+    - Lines are colored based on Average Score (darker = higher score)
+    - You can click and drag along any axis to filter the data
+    """
+    )
+
+    # Add option to show filtered data
+    if st.checkbox("Show filtered data table"):
+        st.dataframe(
+            filtered_df[["Eval Name", "Architecture"] + parallel_metrics],
+            use_container_width=True,
+            hide_index=True,
+        )
