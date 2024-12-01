@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
+from statsmodels.nonparametric.smoothers_lowess import lowess
 
 
 def load_data(file_path="data/open_llm_leaderboard.csv"):
@@ -120,15 +121,53 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
         )  # Better performers
     ].sort_values("Performance per Param", ascending=False)
 
-    # Create scatter plot
+    # Calculate LOWESS trendline values
+    x_sorted = np.sort(efficiency_df["#Params (B)"].values)
+    lowess_result = lowess(
+        efficiency_df["Average ⬆️"].values,
+        efficiency_df["#Params (B)"].values,
+        return_sorted=False,
+    )
+
+    # Add trendline performance difference to dataframe
+    efficiency_df["Trend_Difference"] = efficiency_df["Average ⬆️"] - lowess_result
+    efficiency_df["Above_Trend"] = efficiency_df["Trend_Difference"] > 0
+
+    # Create scatter plot with updated colors
     fig = px.scatter(
         efficiency_df,
         x="#Params (B)",
         y="Average ⬆️",
-        color="Type",
-        title="Model Performance vs Size (Highlighting 'David' Models)",
+        color="Above_Trend",
+        color_discrete_map={
+            True: "rgba(70, 150, 70, 0.6)",  # Subtle green for above trend
+            False: "rgba(150, 70, 70, 0.6)",  # Subtle red for below trend
+        },
+        title="How Model Size Impacts Performance: Spotlight on 'David' Models",
         template="plotly_white",
+        labels={
+            "#Params (B)": "Number of Parameters (Billions)",
+            "Average ⬆️": "Average Model Performance",
+        },
     )
+
+    # Remove legend
+    fig.update_layout(showlegend=False)
+
+    # Add subtitle
+    fig.update_layout(
+        title={
+            "text": "How Model Size Impacts Performance: Spotlight on 'David' Models<br><sup style='font-size:14px'>Analyzing average model performance relative to parameter count in billions</sup>",
+            "y": 0.95,
+            "x": 0.5,
+            "xanchor": "center",
+            "yanchor": "top",
+            "font": {"size": 24},
+        }
+    )
+
+    # Update layout to remove horizontal gridlines
+    fig.update_layout(yaxis=dict(showgrid=False))  # This removes horizontal gridlines
 
     # Add reference lines for thresholds
     size_threshold_value = np.percentile(efficiency_df["#Params (B)"], size_threshold)
@@ -148,19 +187,45 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
         line_dash="dash",
         line_color="gray",
         annotation_text=f"{100-performance_threshold}th Performance Percentile",
-        annotation_position="right",
+        annotation_position="bottom left",
+        annotation=dict(font=dict(size=12)),  # Increased font size for the annotation
     )
 
-    # Add trend line with modified appearance
+    # Add trend line with modified appearance and label
     trendline = px.scatter(
         efficiency_df, x="#Params (B)", y="Average ⬆️", trendline="lowess"
     ).data[1]
-    trendline.line.color = "grey"  # Change color to grey
-    trendline.line.dash = "solid"  # Make line solid instead of dashed
-    trendline.line.width = 1  # Make the line thinner
+    trendline.line.color = "#636EFA"  # Plotly's default blue color
+    trendline.line.dash = "solid"
+    trendline.line.width = 1
+    trendline.showlegend = False  # Hide from legend
     fig.add_trace(trendline)
 
-    fig.update_traces(showlegend=False)
+    # Add trendline description text box with updated explanation
+    trendline_text = (
+        f"<b>Performance Trend</b><br>"
+        f"The blue line shows the general relationship between<br>"
+        f"model size and performance using LOWESS smoothing<br><br>"
+        f"<span style='color:rgba(70,150,70,0.9)'>Green points</span> perform above the trend line.<br>"
+        f"<span style='color:rgba(150,70,70,0.9)'>Red points</span> perform below the trend line."
+    )
+
+    fig.add_annotation(
+        x=0.92,
+        y=0.99,  # Position at top right
+        xref="paper",
+        yref="paper",
+        text=trendline_text,
+        showarrow=False,
+        # bgcolor="rgba(99, 110, 250, 0.1)",  # Light blue background matching trendline
+        bordercolor="#636EFA",  # Border matching trendline
+        borderwidth=2,
+        align="left",
+        font=dict(size=14),
+        xanchor="right",
+        yanchor="top",
+        width=350,
+    )
 
     # Highlight top David model if any exist
     if len(davids) > 0:
@@ -171,7 +236,7 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
                 y=[top_david["Average ⬆️"]],
                 mode="markers",
                 marker=dict(
-                    size=15,
+                    size=12,
                     color="#FFD700",  # Gold
                     line=dict(color="black", width=2),
                     symbol="circle",
@@ -196,27 +261,34 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
             f"• MUSR: {top_david.get('MUSR', 'N/A'):.2f}<br>"
             f"• MMLU-PRO: {top_david.get('MMLU-PRO', 'N/A'):.2f}<br>"
             f"• Average Score: {top_david['Average ⬆️']:.2f}<br>"
+            # f"• IFEval: {top_david.get('IFEval', 'N/A'):.2f} {'▰' * int(top_david.get('IFEval', 0)/10)}{'▱' * (10-int(top_david.get('IFEval', 0)/10))}<br>"
+            # f"• BBH: {top_david.get('BBH', 'N/A'):.2f} {'▰' * int(top_david.get('BBH', 0)/10)}{'▱' * (10-int(top_david.get('BBH', 0)/10))}<br>"
+            # f"• MATH Lvl 5: {top_david.get('MATH Lvl 5', 'N/A'):.2f} {'▰' * int(top_david.get('MATH Lvl 5', 0)/10)}{'▱' * (10-int(top_david.get('MATH Lvl 5', 0)/10))}<br>"
+            # f"• GPQA: {top_david.get('GPQA', 'N/A'):.2f} {'▰' * int(top_david.get('GPQA', 0)/10)}{'▱' * (10-int(top_david.get('GPQA', 0)/10))}<br>"
+            # f"• MUSR: {top_david.get('MUSR', 'N/A'):.2f} {'▰' * int(top_david.get('MUSR', 0)/10)}{'▱' * (10-int(top_david.get('MUSR', 0)/10))}<br>"
+            # f"• MMLU-PRO: {top_david.get('MMLU-PRO', 'N/A'):.2f} {'▰' * int(top_david.get('MMLU-PRO', 0)/10)}{'▱' * (10-int(top_david.get('MMLU-PRO', 0)/10))}<br>"
+            # f"• Average Score: {top_david['Average ⬆️']:.2f} {'★' * int(top_david['Average ⬆️']/10)}{'☆' * (10-int(top_david['Average ⬆️']/10))}<br>"
         )
 
         # Update annotation box with matching gold theme
         fig.add_annotation(
             x=0.92,
-            y=0.08,
+            y=0.04,
             xref="paper",
             yref="paper",
             text=annotation_text,
             showarrow=False,
-            bgcolor="rgba(255, 215, 0, 0.1)",  # Light gold background
+            # bgcolor="rgba(255, 215, 0, 0.1)",  # Light gold background
             bordercolor="#FFD700",  # Gold border matching the highlight
             borderwidth=2,
             align="left",
-            font=dict(size=11),
+            font=dict(size=14),
             xanchor="right",
             yanchor="bottom",
             width=300,
         )
 
-    fig.update_layout(height=600)
+    fig.update_layout(height=700)
     return fig, davids
 
 
