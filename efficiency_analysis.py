@@ -215,7 +215,7 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
     ).data[1]
     trendline.line.color = "#636EFA"  # Plotly's default blue color
     trendline.line.dash = "solid"
-    trendline.line.width = 1
+    trendline.line.width = 1.3
     trendline.showlegend = False  # Hide from legend
     fig.add_trace(trendline)
 
@@ -258,7 +258,7 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
                 marker=dict(
                     size=12,
                     color="#FFD700",  # Gold
-                    line=dict(color="black", width=2),
+                    line=dict(color="black", width=1.5),
                     symbol="circle",
                 ),
                 name=top_david["Eval Name"],
@@ -315,7 +315,7 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
                     marker=dict(
                         size=14,
                         color="rgba(70, 150, 70, 0.6)",
-                        line=dict(color="white", width=1),
+                        line=dict(color="black", width=1.5),
                     ),
                     text=f"<b>{''.join(model.split('_')[1:])}</b><br>• Size: {int(model_data['#Params (B)'])}B params<br>• Average Score: {model_data['Average ⬆️']:.2f}",
                     textposition=text_position,
