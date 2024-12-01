@@ -133,21 +133,36 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
     efficiency_df["Trend_Difference"] = efficiency_df["Average ⬆️"] - lowess_result
     efficiency_df["Above_Trend"] = efficiency_df["Trend_Difference"] > 0
 
-    # Create scatter plot with updated colors
+    # Define models to label separately
+    models_to_label = [
+        "Qwen_Qwen2.5-14B_bfloat16",
+        "Qwen_Qwen2.5-32B_bfloat16",
+        "Qwen_Qwen2.5-72B_bfloat16",
+    ]
+
+    # Remove these models from the main scatter plot
+    main_df = efficiency_df[~efficiency_df["Eval Name"].isin(models_to_label)]
+
+    # Create scatter plot with updated colors and hover data
     fig = px.scatter(
-        efficiency_df,
+        main_df,  # Use filtered dataframe here instead of efficiency_df
         x="#Params (B)",
         y="Average ⬆️",
         color="Above_Trend",
         color_discrete_map={
-            True: "rgba(70, 150, 70, 0.6)",  # Subtle green for above trend
-            False: "rgba(150, 70, 70, 0.6)",  # Subtle red for below trend
+            True: "rgba(70, 150, 70, 0.6)",
+            False: "rgba(150, 70, 70, 0.6)",
+        },
+        hover_data={
+            "Eval Name": True,
+            "Above_Trend": False,
         },
         title="How Model Size Impacts Performance: Spotlight on 'David' Models",
         template="plotly_white",
         labels={
             "#Params (B)": "Number of Parameters (Billions)",
             "Average ⬆️": "Average Model Performance",
+            "Eval Name": "Model Name",
         },
     )
 
@@ -157,7 +172,8 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
     # Add subtitle
     fig.update_layout(
         title={
-            "text": "How Model Size Impacts Performance: Spotlight on 'David' Models<br><sup style='font-size:14px'>Analyzing average model performance relative to parameter count in billions</sup>",
+            # "text": "How Model Size Impacts Performance: Spotlight on 'David' Models<br><sup style='font-size:14px'>Analyzing average model performance relative to parameter count in billions</sup>",
+            "text": "The Best Open-Source LLMs You Can Run on 16GB RAM: A Performance Analysis<br><sup style='font-size:14px'>Analyzing average model performance relative to parameter count in billions</sup>",
             "y": 0.95,
             "x": 0.5,
             "xanchor": "center",
@@ -179,6 +195,7 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
         x=size_threshold_value,
         line_dash="dash",
         line_color="gray",
+        line_width=0.75,
         annotation_text=f"{int(np.ceil(size_threshold_value))}B",
         annotation_position="top",
     )
@@ -186,7 +203,8 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
         y=performance_threshold_value,
         line_dash="dash",
         line_color="gray",
-        annotation_text=f"{100-performance_threshold}th Performance Percentile",
+        line_width=0.75,
+        annotation_text=f"{100-performance_threshold}th Performance Percentile",  # TODO: maybe don't show this line (to be decided later)
         annotation_position="bottom left",
         annotation=dict(font=dict(size=12)),  # Increased font size for the annotation
     )
@@ -203,20 +221,21 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
 
     # Add trendline description text box with updated explanation
     trendline_text = (
-        f"<b>Performance Trend</b><br>"
+        f"<b><span style='color:#636EFA;'>Performance Trend</span></b><br>"
         f"The blue line shows the general relationship between<br>"
         f"model size and performance using LOWESS smoothing<br><br>"
-        f"<span style='color:rgba(70,150,70,0.9)'>Green points</span> perform above the trend line.<br>"
-        f"<span style='color:rgba(150,70,70,0.9)'>Red points</span> perform below the trend line."
+        f"Models in <span style='color:rgba(70,150,70,0.9)'>green</span> perform above the trend line.<br>"
+        f"Models in <span style='color:rgba(150,70,70,0.9)'>red</span> perform below the trend line."
     )
 
     fig.add_annotation(
-        x=0.92,
-        y=0.99,  # Position at top right
+        x=0.82,
+        y=0.29,  # Position at top right
         xref="paper",
         yref="paper",
         text=trendline_text,
         showarrow=False,
+        bgcolor="white",
         # bgcolor="rgba(99, 110, 250, 0.1)",  # Light blue background matching trendline
         bordercolor="#636EFA",  # Border matching trendline
         borderwidth=2,
@@ -224,7 +243,8 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
         font=dict(size=14),
         xanchor="right",
         yanchor="top",
-        width=350,
+        width=335,
+        borderpad=7,
     )
 
     # Highlight top David model if any exist
@@ -246,49 +266,65 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
             )
         )
 
-        # Update annotation text to include all metrics
+        # Update annotation text to be more concise
         annotation_text = (
-            f"Top Model: "
-            f"<b>{top_david['Eval Name']}</b><br>"
+            f"<span style='color: #CC9900;font-weight: bold;'>Top Model Below {int(size_threshold_value)}B:</span><br><br>"
+            f"<b>{''.join(top_david['Eval Name'].split('_')[1:])}</b><br>"
             f"• Size: {int(top_david['#Params (B)'])}B params<br>"
             f"• Architecture: {top_david['Architecture']}<br>"
-            # f"• Efficiency: {top_david['Performance per Param']:.2f}<br>"
-            f"<br>Individual Metrics:<br>"
-            f"• IFEval: {top_david.get('IFEval', 'N/A'):.2f}<br>"
-            f"• BBH: {top_david.get('BBH', 'N/A'):.2f}<br>"
-            f"• MATH Lvl 5: {top_david.get('MATH Lvl 5', 'N/A'):.2f}<br>"
-            f"• GPQA: {top_david.get('GPQA', 'N/A'):.2f}<br>"
-            f"• MUSR: {top_david.get('MUSR', 'N/A'):.2f}<br>"
-            f"• MMLU-PRO: {top_david.get('MMLU-PRO', 'N/A'):.2f}<br>"
-            f"• Average Score: {top_david['Average ⬆️']:.2f}<br>"
-            # f"• IFEval: {top_david.get('IFEval', 'N/A'):.2f} {'▰' * int(top_david.get('IFEval', 0)/10)}{'▱' * (10-int(top_david.get('IFEval', 0)/10))}<br>"
-            # f"• BBH: {top_david.get('BBH', 'N/A'):.2f} {'▰' * int(top_david.get('BBH', 0)/10)}{'▱' * (10-int(top_david.get('BBH', 0)/10))}<br>"
-            # f"• MATH Lvl 5: {top_david.get('MATH Lvl 5', 'N/A'):.2f} {'▰' * int(top_david.get('MATH Lvl 5', 0)/10)}{'▱' * (10-int(top_david.get('MATH Lvl 5', 0)/10))}<br>"
-            # f"• GPQA: {top_david.get('GPQA', 'N/A'):.2f} {'▰' * int(top_david.get('GPQA', 0)/10)}{'▱' * (10-int(top_david.get('GPQA', 0)/10))}<br>"
-            # f"• MUSR: {top_david.get('MUSR', 'N/A'):.2f} {'▰' * int(top_david.get('MUSR', 0)/10)}{'▱' * (10-int(top_david.get('MUSR', 0)/10))}<br>"
-            # f"• MMLU-PRO: {top_david.get('MMLU-PRO', 'N/A'):.2f} {'▰' * int(top_david.get('MMLU-PRO', 0)/10)}{'▱' * (10-int(top_david.get('MMLU-PRO', 0)/10))}<br>"
-            # f"• Average Score: {top_david['Average ⬆️']:.2f} {'★' * int(top_david['Average ⬆️']/10)}{'☆' * (10-int(top_david['Average ⬆️']/10))}<br>"
+            f"• Average Score: {top_david['Average ⬆️']:.2f}"
         )
 
-        # Update annotation box with matching gold theme
+        # Update annotation box position to top left
         fig.add_annotation(
-            x=0.92,
-            y=0.04,
+            x=0.02,  # Changed from 0.92
+            y=0.99,  # Changed from 0.04
             xref="paper",
             yref="paper",
             text=annotation_text,
             showarrow=False,
-            # bgcolor="rgba(255, 215, 0, 0.1)",  # Light gold background
             bordercolor="#FFD700",  # Gold border matching the highlight
             borderwidth=2,
             align="left",
             font=dict(size=14),
-            xanchor="right",
-            yanchor="bottom",
-            width=300,
+            xanchor="left",  # Changed from "right"
+            yanchor="top",  # Changed from "bottom"
+            width=215,
+            borderpad=7,
         )
 
-    fig.update_layout(height=700)
+    # Add labels for specified models
+    models_to_label = [
+        "Qwen_Qwen2.5-14B_bfloat16",
+        "Qwen_Qwen2.5-32B_bfloat16",
+        "Qwen_Qwen2.5-72B_bfloat16",
+    ]
+
+    for model in models_to_label:
+        if model in efficiency_df["Eval Name"].values:
+            model_data = efficiency_df[efficiency_df["Eval Name"] == model].iloc[0]
+            # Determine text position based on model
+            text_position = "middle left" if "72B" in model else "middle right"
+
+            # Add point
+            fig.add_trace(
+                go.Scatter(
+                    x=[model_data["#Params (B)"]],
+                    y=[model_data["Average ⬆️"]],
+                    mode="markers+text",
+                    marker=dict(
+                        size=14,
+                        color="rgba(70, 150, 70, 0.6)",
+                        line=dict(color="white", width=1),
+                    ),
+                    text=f"<b>{''.join(model.split('_')[1:])}</b><br>• Size: {int(model_data['#Params (B)'])}B params<br>• Average Score: {model_data['Average ⬆️']:.2f}",
+                    textposition=text_position,
+                    showlegend=False,
+                    textfont=dict(size=12),
+                )
+            )
+
+    fig.update_layout(height=700, width=1500)
     return fig, davids
 
 
@@ -330,7 +366,7 @@ def main():
     fig, davids = create_efficiency_plot(
         filtered_df, size_threshold, performance_threshold
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=False)
 
     # Add download buttons for the plot
     col1, col2 = st.columns(2)
