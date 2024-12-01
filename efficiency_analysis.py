@@ -67,7 +67,7 @@ def create_filters():
         "Select Types",
         options=available_types,
         selection_mode="multi",
-        default=available_types,
+        default=["🟢 pretrained"],
         help="Filter models by their type classification",
     )
 
@@ -146,7 +146,7 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
         x=size_threshold_value,
         line_dash="dash",
         line_color="gray",
-        annotation_text=f"{size_threshold}th Size Percentile ({size_threshold_value:.1f}B)",
+        annotation_text=f"{int(np.ceil(size_threshold_value))}B",
         annotation_position="top",
     )
     fig.add_hline(
@@ -164,10 +164,12 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
         ).data[1]
     )
 
+    fig.update_traces(showlegend=False)
+
     # Highlight top 3 David models if any exist
     if len(davids) > 0:
         highlight_colors = ["#FFD700", "#C0C0C0", "#CD7F32"]  # Gold, Silver, Bronze
-        for i, (_, model) in enumerate(davids.head(3).iterrows()):
+        for i, (_, model) in enumerate(davids.head(1).iterrows()):
             fig.add_trace(
                 go.Scatter(
                     x=[model["#Params (B)"]],
@@ -223,7 +225,7 @@ def main():
             "Size Threshold (percentile)",
             min_value=5,
             max_value=95,
-            value=25,
+            value=77,
             step=1,
             help="Models below this size percentile will be considered. Lower value = smaller models.",
         )
@@ -233,7 +235,7 @@ def main():
             "Performance Threshold (percentile)",
             min_value=50,
             max_value=95,
-            value=50,
+            value=90,
             step=5,
             help="Models above this performance percentile will be considered. Higher value = better performers.",
         )
@@ -243,6 +245,29 @@ def main():
         filtered_df, size_threshold, performance_threshold
     )
     st.plotly_chart(fig, use_container_width=True)
+
+    # Add download buttons for the plot
+    col1, col2 = st.columns(2)
+
+    with col1:
+        buffer = fig.to_html(include_plotlyjs="cdn", full_html=False)
+        st.download_button(
+            label="Download Plot as HTML",
+            data=buffer,
+            file_name="llm_efficiency_plot.html",
+            mime="text/html",
+            help="Download the plot as an interactive HTML file",
+        )
+
+    with col2:
+        svg_buffer = fig.to_image(format="svg")
+        st.download_button(
+            label="Download Plot as SVG",
+            data=svg_buffer,
+            file_name="llm_efficiency_plot.svg",
+            mime="image/svg+xml",
+            help="Download the plot as a vector SVG file",
+        )
 
     # Show number of models found
     st.metric(
