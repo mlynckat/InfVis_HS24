@@ -328,6 +328,108 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
     return fig, davids
 
 
+def create_model_metrics_radar(df, model_name):
+    """Create a radar chart showing individual metrics for a selected model."""
+    # Define the metrics we want to show
+    metrics = ["IFEval", "BBH", "MATH Lvl 5", "GPQA", "MUSR", "MMLU-PRO"]
+
+    # Get the model's data
+    model_data = df[df["Eval Name"] == model_name].iloc[0]
+
+    # Extract values for each metric
+    values = [model_data[metric] for metric in metrics]
+
+    # Add the first value again to close the polygon
+    values.append(values[0])
+    metrics.append(metrics[0])
+
+    # Create the radar chart
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatterpolar(
+            r=values,
+            theta=metrics,
+            fill="toself",
+            fillcolor="rgba(70, 150, 70, 0.3)",
+            line=dict(color="rgb(70, 150, 70)", width=2),
+            name=model_name,
+        )
+    )
+
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True, range=[0, 100]  # Assuming scores are percentages
+            )
+        ),
+        showlegend=False,
+        title=dict(
+            text=f"Performance Metrics: {model_name.split('_')[1]}",
+            x=0.5,
+            y=0.95,
+            xanchor="center",  # Ensures title is centered and fully visible
+        ),
+        height=400,
+        width=500,  # Increased width to ensure title fits
+        margin=dict(t=50),  # Added top margin to prevent title cutoff
+    )
+
+    return fig
+
+
+def create_model_metrics_comparison(df, model_name):
+    """Create a horizontal bar chart comparing model metrics to average."""
+    metrics = ["IFEval", "BBH", "MATH Lvl 5", "GPQA", "MUSR", "MMLU-PRO"]
+
+    # Get the model's data
+    model_data = df[df["Eval Name"] == model_name].iloc[0]
+
+    # Calculate averages for each metric
+    averages = {metric: df[metric].mean() for metric in metrics}
+
+    # Calculate differences from average
+    differences = {metric: model_data[metric] - averages[metric] for metric in metrics}
+
+    # Create the bar chart
+    fig = go.Figure()
+
+    # Add bars
+    colors = ["#4CAF50" if x >= 0 else "#EF5350" for x in differences.values()]
+
+    fig.add_trace(
+        go.Bar(
+            x=list(differences.values()),
+            y=list(metrics),
+            orientation="h",
+            marker_color=colors,
+            text=[f"{diff:+.1f}" for diff in differences.values()],
+            textposition="outside",
+        )
+    )
+
+    # Add vertical line at x=0
+    fig.add_vline(x=0, line_width=1, line_dash="solid", line_color="gray")
+
+    # Update layout
+    fig.update_layout(
+        title=dict(
+            text=f"Performance vs. Average: {model_name.split('_')[1]}",
+            x=0.5,
+            y=0.95,
+            xanchor="center",
+        ),
+        xaxis_title="Difference from Average (%)",
+        yaxis_title=None,
+        height=400,
+        width=400,
+        showlegend=False,
+        margin=dict(l=120, r=50),  # Increase left margin for metric names
+    )
+
+    return fig
+
+
 def main():
     st.set_page_config(page_title="LLM Efficiency Analysis", layout="wide")
 
@@ -367,6 +469,30 @@ def main():
         filtered_df, size_threshold, performance_threshold
     )
     st.plotly_chart(fig, use_container_width=False)
+
+    # After creating the efficiency plot, add model selection and radar chart
+    if len(filtered_df) > 0:
+        st.subheader("Individual Model Analysis")
+
+        # Model selector
+        selected_model = st.selectbox(
+            "Select a model to view detailed metrics",
+            options=filtered_df["Eval Name"].tolist(),
+            format_func=lambda x: x.split("_")[1],  # Show cleaner model names
+        )
+
+        # Create layout for the two charts
+        col1, col2 = st.columns(2)
+
+        with col1:
+            radar_fig = create_model_metrics_radar(filtered_df, selected_model)
+            st.plotly_chart(radar_fig)
+
+        with col2:
+            comparison_fig = create_model_metrics_comparison(
+                filtered_df, selected_model
+            )
+            st.plotly_chart(comparison_fig)
 
     # Add download buttons for the plot
     col1, col2 = st.columns(2)
