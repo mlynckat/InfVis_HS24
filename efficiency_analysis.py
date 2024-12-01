@@ -126,12 +126,6 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
         x="#Params (B)",
         y="Average ⬆️",
         color="Type",
-        hover_data=[
-            "Eval Name",
-            "Performance per Param",
-            "Size_Percentile",
-            "Performance_Percentile",
-        ],
         title="Model Performance vs Size (Highlighting 'David' Models)",
         template="plotly_white",
     )
@@ -157,50 +151,70 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
         annotation_position="right",
     )
 
-    # Add trend line
-    fig.add_trace(
-        px.scatter(
-            efficiency_df, x="#Params (B)", y="Average ⬆️", trendline="lowess"
-        ).data[1]
-    )
+    # Add trend line with modified appearance
+    trendline = px.scatter(
+        efficiency_df, x="#Params (B)", y="Average ⬆️", trendline="lowess"
+    ).data[1]
+    trendline.line.color = "grey"  # Change color to grey
+    trendline.line.dash = "solid"  # Make line solid instead of dashed
+    trendline.line.width = 1  # Make the line thinner
+    fig.add_trace(trendline)
 
     fig.update_traces(showlegend=False)
 
-    # Highlight top 3 David models if any exist
+    # Highlight top David model if any exist
     if len(davids) > 0:
-        highlight_colors = ["#FFD700", "#C0C0C0", "#CD7F32"]  # Gold, Silver, Bronze
-        for i, (_, model) in enumerate(davids.head(1).iterrows()):
-            fig.add_trace(
-                go.Scatter(
-                    x=[model["#Params (B)"]],
-                    y=[model["Average ⬆️"]],
-                    mode="markers",
-                    marker=dict(
-                        size=15,
-                        color=highlight_colors[i],
-                        line=dict(color="black", width=2),
-                        symbol="circle",
-                    ),
-                    name=f"{model['Eval Name']} (#{i+1})",
-                    hovertemplate=(
-                        "<b>%{customdata[0]}</b><br>"
-                        + "Size: %{x:.1f}B<br>"
-                        + "Score: %{y:.2f}<br>"
-                        + "Efficiency: %{customdata[1]:.2f}<br>"
-                        + "Size Percentile: %{customdata[2]:.1f}<br>"
-                        + "Performance Percentile: %{customdata[3]:.1f}<br>"
-                        + "<extra></extra>"
-                    ),
-                    customdata=[
-                        [
-                            model["Eval Name"],
-                            model["Performance per Param"],
-                            model["Size_Percentile"],
-                            model["Performance_Percentile"],
-                        ]
-                    ],
-                )
+        top_david = davids.iloc[0]
+        fig.add_trace(
+            go.Scatter(
+                x=[top_david["#Params (B)"]],
+                y=[top_david["Average ⬆️"]],
+                mode="markers",
+                marker=dict(
+                    size=15,
+                    color="#FFD700",  # Gold
+                    line=dict(color="black", width=2),
+                    symbol="circle",
+                ),
+                name=top_david["Eval Name"],
+                showlegend=False,
             )
+        )
+
+        # Update annotation text to include all metrics
+        annotation_text = (
+            f"Top Model: "
+            f"<b>{top_david['Eval Name']}</b><br>"
+            f"• Size: {int(top_david['#Params (B)'])}B params<br>"
+            f"• Architecture: {top_david['Architecture']}<br>"
+            # f"• Efficiency: {top_david['Performance per Param']:.2f}<br>"
+            f"<br>Individual Metrics:<br>"
+            f"• IFEval: {top_david.get('IFEval', 'N/A'):.2f}<br>"
+            f"• BBH: {top_david.get('BBH', 'N/A'):.2f}<br>"
+            f"• MATH Lvl 5: {top_david.get('MATH Lvl 5', 'N/A'):.2f}<br>"
+            f"• GPQA: {top_david.get('GPQA', 'N/A'):.2f}<br>"
+            f"• MUSR: {top_david.get('MUSR', 'N/A'):.2f}<br>"
+            f"• MMLU-PRO: {top_david.get('MMLU-PRO', 'N/A'):.2f}<br>"
+            f"• Average Score: {top_david['Average ⬆️']:.2f}<br>"
+        )
+
+        # Update annotation box with matching gold theme
+        fig.add_annotation(
+            x=0.92,
+            y=0.08,
+            xref="paper",
+            yref="paper",
+            text=annotation_text,
+            showarrow=False,
+            bgcolor="rgba(255, 215, 0, 0.1)",  # Light gold background
+            bordercolor="#FFD700",  # Gold border matching the highlight
+            borderwidth=2,
+            align="left",
+            font=dict(size=11),
+            xanchor="right",
+            yanchor="bottom",
+            width=300,
+        )
 
     fig.update_layout(height=600)
     return fig, davids
