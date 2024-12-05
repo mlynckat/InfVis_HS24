@@ -4,11 +4,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 from statsmodels.nonparametric.smoothers_lowess import lowess
+from datasets import load_dataset
 
 
-def load_data(file_path="data/open_llm_leaderboard.csv"):
+def load_data():
     """Load and preprocess the data."""
-    df = pd.read_csv(file_path)
+    dataset = load_dataset("open-llm-leaderboard/contents")
+    df = pd.DataFrame(dataset["train"])
     # Rename columns
     df = df.rename(
         columns={
@@ -99,7 +101,7 @@ def filter_data(df, selected_architecture, size_range, selected_types):
     return filtered_df
 
 
-def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
+def create_efficiency_plot(filtered_df):
     """Create the efficiency plot."""
     # Calculate efficiency metrics
     efficiency_df = filtered_df.copy()
@@ -112,15 +114,6 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
     efficiency_df["Performance_Percentile"] = (
         efficiency_df["Average ⬆️"].rank(pct=True) * 100
     )
-
-    # Define "Davids" based on thresholds
-    davids = efficiency_df[
-        (efficiency_df["Size_Percentile"] <= size_threshold)  # Smaller models
-        & (
-            efficiency_df["Performance_Percentile"] >= performance_threshold
-        )  # Better performers
-    ].sort_values("Performance per Param", ascending=False)
-
     # Calculate LOWESS trendline values
     x_sorted = np.sort(efficiency_df["#Params (B)"].values)
     lowess_result = lowess(
@@ -133,15 +126,39 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
     efficiency_df["Trend_Difference"] = efficiency_df["Average ⬆️"] - lowess_result
     efficiency_df["Above_Trend"] = efficiency_df["Trend_Difference"] > 0
 
-    # Define models to label separately
-    models_to_label = [
-        "Qwen_Qwen2.5-14B_bfloat16",
-        "Qwen_Qwen2.5-32B_bfloat16",
-        "Qwen_Qwen2.5-72B_bfloat16",
-    ]
+    # Define models to label with their positions and descriptions
+    models_to_label = {
+        "suayptalha_HomerCreativeAnvita-Mix-Qw7B_bfloat16": {
+            "x": -1,
+            "y": 55,
+            "desc": "Best model under 13B parameters<br>(16GB VRAM):<br>"
+            "Lightweight language models<br>ideal for prototyping,<br>"
+            "chatbots, and basic NLP tasks.",
+        },
+        "upstage_solar-pro-preview-instruct_bfloat16": {
+            "x": 13.5,
+            "y": 55,
+            "desc": "Best model under 26B parameters<br>(32GB VRAM):<br>"
+            "Intermediate-scale models<br>balancing performance<br>"
+            "and VRAM efficiency.",
+        },
+        "rombodawg_Rombos-LLM-V2.5-Qwen-32b_bfloat16": {
+            "x": 27,
+            "y": 55,
+            "desc": "Best model under 40B parameters<br>(48GB VRAM):<br>"
+            "Larger models with enhanced<br>reasoning and contexual<br>"
+            "depth.",
+        },
+        "MaziyarPanahi_calme-3.2-instruct-78b_bfloat16": {
+            "x": 60,
+            "y": 55,
+            "desc": "Best model overall (64GB+ VRAM):<br>"
+            "State-of-the-art models requiring<br>extensive computational power.",
+        },
+    }
 
     # Remove these models from the main scatter plot
-    main_df = efficiency_df[~efficiency_df["Eval Name"].isin(models_to_label)]
+    main_df = efficiency_df[~efficiency_df["Eval Name"].isin(models_to_label.keys())]
 
     # Create scatter plot with updated colors and hover data
     fig = px.scatter(
@@ -162,6 +179,8 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
         labels={
             "#Params (B)": "Number of Parameters (Billions)",
             "Average ⬆️": "Average Model Performance",
+            "Precision": "Model Precision",
+            "Type": "Type",
             "Eval Name": "Model Name",
         },
     )
@@ -169,11 +188,11 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
     # Remove legend
     fig.update_layout(showlegend=False)
 
-    # Add subtitle
+    # Update title and subtitle
     fig.update_layout(
         title={
-            # "text": "How Model Size Impacts Performance: Spotlight on 'David' Models<br><sup style='font-size:14px'>Analyzing average model performance relative to parameter count in billions</sup>",
-            "text": "The Best Open-Source LLMs You Can Run on 16GB RAM: A Performance Analysis<br><sup style='font-size:14px'>Analyzing average model performance relative to parameter count in billions</sup>",
+            "text": "LLM Performance vs. Model Size and VRAM<br>"
+            "<sup style='font-size:14px'>Optimal Models for 16GB, 32GB, 48GB, and 64GB+ Configurations</sup>",
             "y": 0.95,
             "x": 0.5,
             "xanchor": "center",
@@ -185,29 +204,16 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
     # Update layout to remove horizontal gridlines
     fig.update_layout(yaxis=dict(showgrid=False))  # This removes horizontal gridlines
 
-    # Add reference lines for thresholds
-    size_threshold_value = np.percentile(efficiency_df["#Params (B)"], size_threshold)
-    performance_threshold_value = np.percentile(
-        efficiency_df["Average ⬆️"], performance_threshold
-    )
-
-    fig.add_vline(
-        x=size_threshold_value,
-        line_dash="dash",
-        line_color="gray",
-        line_width=0.75,
-        annotation_text=f"{int(np.ceil(size_threshold_value))}B",
-        annotation_position="top",
-    )
-    fig.add_hline(
-        y=performance_threshold_value,
-        line_dash="dash",
-        line_color="gray",
-        line_width=0.75,
-        annotation_text=f"{100-performance_threshold}th Performance Percentile",  # TODO: maybe don't show this line (to be decided later)
-        annotation_position="bottom left",
-        annotation=dict(font=dict(size=12)),  # Increased font size for the annotation
-    )
+    # Replace the single threshold line with four hardcoded lines
+    for param_size in [13, 26, 40, 53]:
+        fig.add_vline(
+            x=param_size,
+            line_dash="dash",
+            line_color="gray",
+            line_width=0.75,
+            annotation_text=f"{param_size}B",
+            annotation_position="top",
+        )
 
     # Add trend line with modified appearance and label
     trendline = px.scatter(
@@ -223,14 +229,14 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
     trendline_text = (
         f"<b><span style='color:#636EFA;'>Performance Trend</span></b><br>"
         f"The blue line shows the general relationship between<br>"
-        f"model size and performance using LOWESS smoothing<br><br>"
+        f"model size and performance using LOWESS smoothing.<br><br>"
         f"Models in <span style='color:rgba(70,150,70,0.9)'>green</span> perform above the trend line.<br>"
         f"Models in <span style='color:rgba(150,70,70,0.9)'>red</span> perform below the trend line."
     )
 
     fig.add_annotation(
-        x=0.82,
-        y=0.29,  # Position at top right
+        x=0.85,
+        y=0.39,
         xref="paper",
         yref="paper",
         text=trendline_text,
@@ -243,95 +249,62 @@ def create_efficiency_plot(filtered_df, size_threshold, performance_threshold):
         font=dict(size=14),
         xanchor="right",
         yanchor="top",
-        width=335,
+        width=355,
         borderpad=7,
     )
 
-    # Highlight top David model if any exist
-    if len(davids) > 0:
-        top_david = davids.iloc[0]
-        fig.add_trace(
-            go.Scatter(
-                x=[top_david["#Params (B)"]],
-                y=[top_david["Average ⬆️"]],
-                mode="markers",
-                marker=dict(
-                    size=12,
-                    color="#FFD700",  # Gold
-                    line=dict(color="black", width=1.5),
-                    symbol="circle",
-                ),
-                name=top_david["Eval Name"],
-                showlegend=False,
-            )
-        )
-
-        # Update annotation text to be more concise
-        annotation_text = (
-            f"<span style='color: #CC9900;font-weight: bold;'>Top Model Below {int(size_threshold_value)}B:</span><br><br>"
-            f"<b>{''.join(top_david['Eval Name'].split('_')[1:])}</b><br>"
-            f"• Size: {int(top_david['#Params (B)'])}B params<br>"
-            f"• Architecture: {top_david['Architecture']}<br>"
-            f"• Average Score: {top_david['Average ⬆️']:.2f}"
-        )
-
-        # Update annotation box position to top left
-        fig.add_annotation(
-            x=0.02,  # Changed from 0.92
-            y=0.99,  # Changed from 0.04
-            xref="paper",
-            yref="paper",
-            text=annotation_text,
-            showarrow=False,
-            bordercolor="#FFD700",  # Gold border matching the highlight
-            borderwidth=2,
-            align="left",
-            font=dict(size=14),
-            xanchor="left",  # Changed from "right"
-            yanchor="top",  # Changed from "bottom"
-            width=215,
-            borderpad=7,
-        )
-
-    # Add labels for specified models
-    models_to_label = [
-        "Qwen_Qwen2.5-14B_bfloat16",
-        "Qwen_Qwen2.5-32B_bfloat16",
-        "Qwen_Qwen2.5-72B_bfloat16",
-    ]
-
-    for model in models_to_label:
+    for model, position in models_to_label.items():
         if model in efficiency_df["Eval Name"].values:
             model_data = efficiency_df[efficiency_df["Eval Name"] == model].iloc[0]
-            # Determine text position based on model
-            text_position = "middle left" if "72B" in model else "middle right"
 
-            # Add point
+            # Add highlighted point
             fig.add_trace(
                 go.Scatter(
                     x=[model_data["#Params (B)"]],
                     y=[model_data["Average ⬆️"]],
-                    mode="markers+text",
+                    mode="markers",
                     marker=dict(
-                        size=14,
-                        color="rgba(70, 150, 70, 0.6)",
-                        line=dict(color="black", width=1.5),
+                        size=13,  # Increased size
+                        color="rgba(255, 215, 0, 0.8)",  # Gold color with some transparency
+                        line=dict(color="black", width=2),  # Thicker black border
+                        symbol="star",  # Changed to star shape
                     ),
-                    text=f"<b>{''.join(model.split('_')[1:])}</b><br>• Size: {int(model_data['#Params (B)'])}B params<br>• Average Score: {model_data['Average ⬆️']:.2f}",
-                    textposition=text_position,
                     showlegend=False,
-                    textfont=dict(size=12),
                 )
             )
 
+            # Add annotation with width constraint
+            fig.add_annotation(
+                x=position["x"],
+                y=position["y"],
+                text=(
+                    f"<b>{''.join(model.split('_')[1:]).replace('bfloat16', '').replace('-', ' ')}</b><br>"
+                    f"{position['desc']}"
+                ),
+                xref="x",
+                yref="y",
+                xanchor="left",
+                yanchor="middle",
+                showarrow=True,
+                arrowhead=2,
+                arrowsize=1,
+                arrowwidth=2,
+                ax=0,
+                ay=0,
+                width=200,  # Control width of text box
+                align="left",  # Align text to the left
+                bordercolor="black",  # Optional: adds border to make width more visible
+                borderwidth=1,
+            )
+
     fig.update_layout(height=700, width=1500)
-    return fig, davids
+    return fig
 
 
 def create_model_metrics_radar(df, model_name):
     """Create a radar chart showing individual metrics for a selected model."""
     # Define the metrics we want to show
-    metrics = ["IFEval", "BBH", "MATH Lvl 5", "GPQA", "MUSR", "MMLU-PRO"]
+    metrics = ["Average ⬆️", "IFEval", "BBH", "MATH Lvl 5", "GPQA", "MUSR", "MMLU-PRO"]
 
     # Get the model's data
     model_data = df[df["Eval Name"] == model_name].iloc[0]
@@ -378,9 +351,106 @@ def create_model_metrics_radar(df, model_name):
     return fig
 
 
+def create_model_metrics_radar_minimal_1(df, model_name):
+    """Create a minimal radar chart showing individual metrics for a selected model."""
+    metrics = ["Average ⬆️", "IFEval", "BBH", "MATH Lvl 5", "GPQA", "MUSR", "MMLU-PRO"]
+
+    # Get the model's data
+    model_data = df[df["Eval Name"] == model_name].iloc[0]
+
+    # Extract values for each metric
+    values = [model_data[metric] for metric in metrics]
+
+    # Add the first value again to close the polygon
+    values.append(values[0])
+    metrics.append(metrics[0])
+
+    # Create the radar chart
+    fig = go.Figure()
+
+    # Add lines from center to each point
+    for i in range(len(values) - 1):
+        fig.add_trace(
+            go.Scatterpolar(
+                r=[0, values[i]],
+                theta=[metrics[i], metrics[i]],
+                mode="lines",
+                line=dict(color="rgb(70, 150, 70)", width=2),
+                showlegend=False,
+            )
+        )
+
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(visible=False, range=[0, 100]),  # Hide the radial axis
+            angularaxis=dict(
+                visible=False,  # Hide the angular axis
+                showline=False,
+                showticklabels=False,
+            ),
+        ),
+        showlegend=False,
+        paper_bgcolor="rgba(0,0,0,0)",  # Transparent background
+        plot_bgcolor="rgba(0,0,0,0)",  # Transparent plot area
+        margin=dict(l=0, r=0, t=30, b=0),  # Minimal margins
+        height=150,
+        width=200,
+    )
+
+    return fig
+
+
+def create_model_metrics_radar_minimal_2(df, model_name):
+    """Create a minimal radar chart showing individual metrics for a selected model."""
+    metrics = ["Average ⬆️", "IFEval", "BBH", "MATH Lvl 5", "GPQA", "MUSR", "MMLU-PRO"]
+
+    # Get the model's data
+    model_data = df[df["Eval Name"] == model_name].iloc[0]
+
+    # Extract values for each metric
+    values = [model_data[metric] for metric in metrics]
+
+    # Add the first value again to close the polygon
+    values.append(values[0])
+    metrics.append(metrics[0])
+
+    # Create the radar chart
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatterpolar(
+            r=values,
+            theta=metrics,
+            fill="toself",
+            fillcolor="rgba(70, 150, 70, 0.3)",
+            line=dict(color="rgb(70, 150, 70)", width=2),
+        )
+    )
+
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(visible=False, range=[0, 100]),  # Hide the radial axis
+            angularaxis=dict(
+                visible=False,  # Hide the angular axis
+                showline=False,
+                showticklabels=False,
+            ),
+        ),
+        showlegend=False,
+        paper_bgcolor="rgba(0,0,0,0)",  # Transparent background
+        plot_bgcolor="rgba(0,0,0,0)",  # Transparent plot area
+        margin=dict(l=0, r=0, t=30, b=0),  # Minimal margins
+        height=150,
+        width=200,
+    )
+
+    return fig
+
+
 def create_model_metrics_comparison(df, model_name):
     """Create a horizontal bar chart comparing model metrics to average."""
-    metrics = ["IFEval", "BBH", "MATH Lvl 5", "GPQA", "MUSR", "MMLU-PRO"]
+    # metrics = ["Average ⬆️", "IFEval", "BBH", "MATH Lvl 5", "GPQA", "MUSR", "MMLU-PRO"]
+    metrics = ["BBH", "IFEval", "MATH Lvl 5", "MUSR", "GPQA", "MMLU-PRO"]
 
     # Get the model's data
     model_data = df[df["Eval Name"] == model_name].iloc[0]
@@ -395,7 +465,7 @@ def create_model_metrics_comparison(df, model_name):
     fig = go.Figure()
 
     # Add bars
-    colors = ["#4CAF50" if x >= 0 else "#EF5350" for x in differences.values()]
+    colors = ["#FFD700" if x >= 0 else "#EF5350" for x in differences.values()]
 
     fig.add_trace(
         go.Bar(
@@ -404,7 +474,7 @@ def create_model_metrics_comparison(df, model_name):
             orientation="h",
             marker_color=colors,
             text=[f"{diff:+.1f}" for diff in differences.values()],
-            textposition="outside",
+            textposition="inside",
         )
     )
 
@@ -424,7 +494,186 @@ def create_model_metrics_comparison(df, model_name):
         height=400,
         width=400,
         showlegend=False,
-        margin=dict(l=120, r=50),  # Increase left margin for metric names
+        margin=dict(l=20, r=20),  # Increase left margin for metric names
+    )
+
+    return fig
+
+
+def create_model_metrics_comparison_minimal(df, model_name):
+    """Create a minimal horizontal bar chart comparing model metrics to average."""
+    metrics = ["Average ⬆️", "IFEval", "BBH", "MATH Lvl 5", "GPQA", "MUSR", "MMLU-PRO"]
+
+    # Get the model's data
+    model_data = df[df["Eval Name"] == model_name].iloc[0]
+
+    # Calculate averages for each metric
+    averages = {metric: df[metric].mean() for metric in metrics}
+
+    # Calculate differences from average
+    differences = {metric: model_data[metric] - averages[metric] for metric in metrics}
+
+    # Create the bar chart
+    fig = go.Figure()
+
+    # Add bars with consistent color
+    fig.add_trace(
+        go.Bar(
+            x=list(differences.values()),
+            y=list(metrics),
+            orientation="h",
+            marker_color="rgba(70, 150, 70, 0.6)",
+        )
+    )
+
+    # Add vertical line at x=0
+    fig.add_vline(
+        x=0, line_width=1, line_dash="solid", line_color="rgba(128, 128, 128, 0.3)"
+    )
+
+    # Update layout to remove all text and labels
+    fig.update_layout(
+        showlegend=False,
+        title=dict(
+            text=f"Performance vs. Average: {model_name.split('_')[1]}",
+            x=0.5,
+            y=0.95,
+            xanchor="center",
+        ),
+        xaxis=dict(
+            showticklabels=False, showgrid=False, zeroline=False, showline=False
+        ),
+        yaxis=dict(
+            showticklabels=False, showgrid=False, zeroline=False, showline=False
+        ),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=0, r=0, t=30, b=0),
+        height=150,
+        width=200,
+    )
+
+    return fig
+
+
+def create_qwen_comparison_plot(df):
+    """Create a horizontal bar plot comparing metrics across Qwen models."""
+    # Define the metrics and models to compare
+    metrics = ["Average ⬆️", "IFEval", "BBH", "MATH Lvl 5", "GPQA", "MUSR", "MMLU-PRO"]
+    model_names = [
+        "Qwen_Qwen2.5-7B_bfloat16",
+        "Qwen_Qwen2.5-14B_bfloat16",
+        "Qwen_Qwen2.5-32B_bfloat16",
+        "Qwen_Qwen2.5-72B_bfloat16",
+    ]
+
+    # Filter for just these models
+    qwen_df = df[df["Eval Name"].isin(model_names)]
+
+    # Create figure
+    fig = go.Figure()
+
+    # Define colors for different model sizes
+    colors = ["#90CAF9", "#64B5F6", "#42A5F5", "#2196F3"]
+
+    # Add bars for each metric
+    for i, model in enumerate(model_names):
+        if model in qwen_df["Eval Name"].values:
+            model_data = qwen_df[qwen_df["Eval Name"] == model].iloc[0]
+            values = [model_data[metric] for metric in metrics]
+
+            fig.add_trace(
+                go.Bar(
+                    name=f"Qwen {int(model_data['#Params (B)'])}B",
+                    y=metrics,
+                    x=values,
+                    orientation="h",
+                    marker_color=colors[i],
+                )
+            )
+
+    # Update layout
+    fig.update_layout(
+        title=dict(
+            text="Qwen Model Family Performance Comparison",
+            x=0.5,
+            y=0.95,
+            xanchor="center",
+            font=dict(size=20),
+        ),
+        xaxis_title="Score (%)",
+        yaxis_title=None,
+        barmode="group",
+        height=500,
+        width=800,
+        yaxis=dict(
+            categoryorder="array",
+            categoryarray=metrics[::-1],  # Reverse order to match radar chart
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=20, r=20, t=80, b=20),
+    )
+
+    return fig
+
+
+def create_qwen_comparison_plot_vertical(df):
+    """Create a vertical bar plot comparing metrics across Qwen models."""
+    # Define the metrics and models to compare
+    metrics = ["Average ⬆️", "IFEval", "BBH", "MATH Lvl 5", "GPQA", "MUSR", "MMLU-PRO"]
+    metrics = ["Average ⬆️", "MUSR", "GPQA", "MATH Lvl 5", "IFEval", "BBH", "MMLU-PRO"]
+    model_names = [
+        "Qwen_Qwen2.5-7B_bfloat16",
+        "Qwen_Qwen2.5-14B_bfloat16",
+        "Qwen_Qwen2.5-32B_bfloat16",
+        "Qwen_Qwen2.5-72B_bfloat16",
+    ]
+
+    # Filter for just these models
+    qwen_df = df[df["Eval Name"].isin(model_names)]
+
+    # Create figure
+    fig = go.Figure()
+
+    # Define colors for different model sizes
+    colors = ["#90CAF9", "#64B5F6", "#42A5F5", "#2196F3"]
+
+    # Add bars for each metric
+    for i, model in enumerate(model_names):
+        if model in qwen_df["Eval Name"].values:
+            model_data = qwen_df[qwen_df["Eval Name"] == model].iloc[0]
+            values = [model_data[metric] for metric in metrics]
+
+            fig.add_trace(
+                go.Bar(
+                    name=f"Qwen {int(model_data['#Params (B)'])}B",
+                    x=metrics,
+                    y=values,
+                    marker_color=colors[i],
+                )
+            )
+
+    # Update layout
+    fig.update_layout(
+        title=dict(
+            text="Qwen Model Family Performance Comparison",
+            x=0.5,
+            y=0.95,
+            xanchor="center",
+            font=dict(size=20),
+        ),
+        yaxis_title="Score (%)",
+        xaxis_title=None,
+        barmode="group",
+        height=600,
+        width=1000,
+        xaxis=dict(
+            tickangle=45,  # Angle the metric labels for better readability
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(
+            l=20, r=20, t=80, b=100
+        ),  # Increased bottom margin for angled labels
     )
 
     return fig
@@ -440,34 +689,8 @@ def main():
     df = load_data()
     filtered_df = filter_data(df, selected_architecture, size_range, selected_types)
 
-    # Threshold controls
-    st.subheader("Threshold Controls")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        size_threshold = st.slider(
-            "Size Threshold (percentile)",
-            min_value=5,
-            max_value=95,
-            value=77,
-            step=1,
-            help="Models below this size percentile will be considered. Lower value = smaller models.",
-        )
-
-    with col2:
-        performance_threshold = st.slider(
-            "Performance Threshold (percentile)",
-            min_value=50,
-            max_value=95,
-            value=90,
-            step=5,
-            help="Models above this performance percentile will be considered. Higher value = better performers.",
-        )
-
     # Create and display the plot
-    fig, davids = create_efficiency_plot(
-        filtered_df, size_threshold, performance_threshold
-    )
+    fig = create_efficiency_plot(filtered_df)
     st.plotly_chart(fig, use_container_width=False)
 
     # After creating the efficiency plot, add model selection and radar chart
@@ -482,17 +705,29 @@ def main():
         )
 
         # Create layout for the two charts
-        col1, col2 = st.columns(2)
+        col1, col2, col3, col4 = st.columns(4)
 
         with col1:
             radar_fig = create_model_metrics_radar(filtered_df, selected_model)
-            st.plotly_chart(radar_fig)
+            st.plotly_chart(radar_fig, use_container_width=True)
 
         with col2:
+            radar_fig_minimal = create_model_metrics_radar_minimal_1(
+                filtered_df, selected_model
+            )
+            st.plotly_chart(radar_fig_minimal, use_container_width=True)
+
+        with col3:
             comparison_fig = create_model_metrics_comparison(
                 filtered_df, selected_model
             )
-            st.plotly_chart(comparison_fig)
+            st.plotly_chart(comparison_fig, use_container_width=True)
+
+        with col4:
+            comparison_fig_minimal = create_model_metrics_comparison_minimal(
+                filtered_df, selected_model
+            )
+            st.plotly_chart(comparison_fig_minimal, use_container_width=True)
 
     # Add download buttons for the plot
     col1, col2 = st.columns(2)
@@ -517,12 +752,16 @@ def main():
             help="Download the plot as a vector SVG file",
         )
 
-    # Show number of models found
-    st.metric(
-        "Models Found",
-        len(davids),
-        help="Number of models meeting the selected criteria",
-    )
+    # Create and display the Qwen comparison plot
+    col1, col2 = st.columns(2)
+
+    with col1:
+        qwen_comparison_fig = create_qwen_comparison_plot(df)
+        st.plotly_chart(qwen_comparison_fig, use_container_width=True)
+
+    with col2:
+        qwen_comparison_fig_vertical = create_qwen_comparison_plot_vertical(df)
+        st.plotly_chart(qwen_comparison_fig_vertical, use_container_width=True)
 
 
 if __name__ == "__main__":
