@@ -129,31 +129,28 @@ def create_efficiency_plot(filtered_df):
     # Define models to label with their positions and descriptions
     models_to_label = {
         "suayptalha_HomerCreativeAnvita-Mix-Qw7B_bfloat16": {
-            "x": -1,
+            "x": -2.7,
             "y": 55,
-            "desc": "Best model under 13B parameters<br>(16GB VRAM):<br>"
-            "Lightweight language models<br>ideal for prototyping,<br>"
-            "chatbots, and basic NLP tasks.",
+            "desc1": "Best model under 13B<br>parameters (16GB VRAM):",
+            "desc2": "Lightweight language models<br>ideal for prototyping, chatbots,<br>and basic NLP tasks.",
         },
         "upstage_solar-pro-preview-instruct_bfloat16": {
-            "x": 13.5,
+            "x": 13.2,
             "y": 55,
-            "desc": "Best model under 26B parameters<br>(32GB VRAM):<br>"
-            "Intermediate-scale models<br>balancing performance<br>"
-            "and VRAM efficiency.",
+            "desc1": "Best model under 26B<br>parameters (32GB VRAM):",
+            "desc2": "Intermediate-scale models<br>balancing performance<br>and VRAM efficiency.",
         },
         "rombodawg_Rombos-LLM-V2.5-Qwen-32b_bfloat16": {
-            "x": 27,
+            "x": 26.2,
             "y": 55,
-            "desc": "Best model under 40B parameters<br>(48GB VRAM):<br>"
-            "Larger models with enhanced<br>reasoning and contexual<br>"
-            "depth.",
+            "desc1": "Best model under 40B<br>parameters (48GB VRAM):",
+            "desc2": "Larger models with enhanced<br>reasoning and contexual<br>depth.",
         },
         "MaziyarPanahi_calme-3.2-instruct-78b_bfloat16": {
-            "x": 60,
+            "x": 65,
             "y": 55,
-            "desc": "Best model overall (64GB+ VRAM):<br>"
-            "State-of-the-art models requiring<br>extensive computational power.",
+            "desc1": "Best model overall<br>(64GB+ VRAM):",
+            "desc2": "State-of-the-art models requiring<br>extensive computational power.<br>",
         },
     }
 
@@ -162,7 +159,7 @@ def create_efficiency_plot(filtered_df):
 
     # Create scatter plot with updated colors and hover data
     fig = px.scatter(
-        main_df,  # Use filtered dataframe here instead of efficiency_df
+        main_df,
         x="#Params (B)",
         y="Average ⬆️",
         color="Above_Trend",
@@ -188,16 +185,20 @@ def create_efficiency_plot(filtered_df):
     # Remove legend
     fig.update_layout(showlegend=False)
 
-    # Update title and subtitle
+    # Add subtitle
     fig.update_layout(
         title={
-            "text": "LLM Performance vs. Model Size and VRAM<br>"
-            "<sup style='font-size:14px'>Optimal Models for 16GB, 32GB, 48GB, and 64GB+ Configurations</sup>",
+            # "text": "How Model Size Impacts Performance: Spotlight on 'David' Models<br><sup style='font-size:14px'>Analyzing average model performance relative to parameter count in billions</sup>",
+            # "text": "The Best Open-Source LLMs You Can Run on 16GB RAM: A Performance Analysis<br><sup style='font-size:14px'>Analyzing average model performance relative to parameter count in billions</sup>",
+            "text": "⭐️ The Best LLMs You Can Run on Your GPU: Models for Different VRAM Configurations<br><sup style='font-size:16x'>Identifying the top-performing models under 13B, 26B, 40B, and 64B parameters to match GPU capabilities.</sup>",
+            # "text": "Best Open-Source LLMs for Your GPU Configuration: Starred for Easy Selection ⭐<br><sup style='font-size:14px'>Highlighting the most efficient models for VRAM configurations ranging from 16GB to 64GB+.</sup>",
+            # "text": "Top LLMs for Every GPU: A Starred Guide for Different VRAM Thresholds ⭐<br><sup style='font-size:14px'>Explore high-performing models under parameter limits from 13B to 64B, tailored to your GPU's memory.</sup>",
+            # "text": "Which LLM Fits Your GPU? Best Models by VRAM Needs ⭐<br><sup style='font-size:14px'>A breakdown of top models optimized for 16GB, 32GB, 48GB, and 64GB+ GPU configurations.</sup>",
             "y": 0.95,
             "x": 0.5,
             "xanchor": "center",
             "yanchor": "top",
-            "font": {"size": 24},
+            "font": {"size": 28},
         }
     )
 
@@ -227,47 +228,49 @@ def create_efficiency_plot(filtered_df):
 
     # Add trendline description text box with updated explanation
     trendline_text = (
-        f"<b><span style='color:#636EFA;'>Performance Trend</span></b><br>"
+        f"<b><span style='color:#636EFA;'>Performance Trend</span></b><br><br>"
         f"The blue line shows the general relationship between<br>"
         f"model size and performance using LOWESS smoothing.<br><br>"
-        f"Models in <span style='color:rgba(70,150,70,0.9)'>green</span> perform above the trend line.<br>"
-        f"Models in <span style='color:rgba(150,70,70,0.9)'>red</span> perform below the trend line."
+        f"Models in <b><span style='color:rgba(70,150,70,0.9)'>green</span></b> perform above the trend line.<br>"
+        f"Models in <b><span style='color:rgba(150,70,70,0.9)'>red</span></b> perform below the trend line."
     )
 
     fig.add_annotation(
-        x=0.85,
-        y=0.39,
+        x=0.80,
+        y=0.35,
         xref="paper",
         yref="paper",
         text=trendline_text,
         showarrow=False,
         bgcolor="white",
         # bgcolor="rgba(99, 110, 250, 0.1)",  # Light blue background matching trendline
-        bordercolor="#636EFA",  # Border matching trendline
-        borderwidth=2,
+        # bordercolor="#636EFA",  # Border matching trendline
+        # borderwidth=1.3,
         align="left",
-        font=dict(size=14),
+        font=dict(size=13),
         xanchor="right",
         yanchor="top",
-        width=355,
+        width=362,
         borderpad=7,
     )
 
+    # Move star markers to the end to ensure they appear on top
     for model, position in models_to_label.items():
         if model in efficiency_df["Eval Name"].values:
             model_data = efficiency_df[efficiency_df["Eval Name"] == model].iloc[0]
 
-            # Add highlighted point
+            # Add highlighted point (now after all other traces)
             fig.add_trace(
                 go.Scatter(
                     x=[model_data["#Params (B)"]],
                     y=[model_data["Average ⬆️"]],
                     mode="markers",
                     marker=dict(
-                        size=13,  # Increased size
-                        color="rgba(255, 215, 0, 0.8)",  # Gold color with some transparency
-                        line=dict(color="black", width=2),  # Thicker black border
-                        symbol="star",  # Changed to star shape
+                        size=20,
+                        color="rgba(255, 215, 0, 0.8)",
+                        line=dict(color="black", width=0.5),
+                        symbol="star",
+                        # symbol="star-diamond",
                     ),
                     showlegend=False,
                 )
@@ -278,8 +281,9 @@ def create_efficiency_plot(filtered_df):
                 x=position["x"],
                 y=position["y"],
                 text=(
-                    f"<b>{''.join(model.split('_')[1:]).replace('bfloat16', '').replace('-', ' ')}</b><br>"
-                    f"{position['desc']}"
+                    f"<i>{position['desc2']}</i><br><br>"
+                    f"{position['desc1']}<br>"
+                    f"<b>{''.join(model.split('_')[1:]).replace('bfloat16', '').replace('-', ' ')}</b>"
                 ),
                 xref="x",
                 yref="y",
@@ -291,10 +295,9 @@ def create_efficiency_plot(filtered_df):
                 arrowwidth=2,
                 ax=0,
                 ay=0,
-                width=200,  # Control width of text box
+                width=232,  # Control width of text box
                 align="left",  # Align text to the left
-                bordercolor="black",  # Optional: adds border to make width more visible
-                borderwidth=1,
+                font=dict(size=13),
             )
 
     fig.update_layout(height=700, width=1500)
@@ -682,15 +685,32 @@ def create_qwen_comparison_plot_vertical(df):
 def main():
     st.set_page_config(page_title="LLM Efficiency Analysis", layout="wide")
 
-    # Create filters
-    selected_architecture, size_range, selected_types = create_filters()
-
-    # Load and filter data
+    # Load data
     df = load_data()
+
+    # Override filters with specific settings
+    selected_architecture = "All"
+    size_range = (0, 80)
+    selected_types = df["Type"].unique().tolist()  # All available types
+
+    # Filter data with these settings
     filtered_df = filter_data(df, selected_architecture, size_range, selected_types)
 
-    # Create and display the plot
+    # Create the plot with higher resolution
     fig = create_efficiency_plot(filtered_df)
+
+    # Update the figure configuration for higher resolution
+    # fig.update_layout(
+    #     height=1400,  # Double the height
+    #     width=3000,  # Double the width
+    # )
+
+    # Save high-resolution image
+    fig.write_image(
+        "llm_efficiency_plot_hires.png", scale=2
+    )  # scale=2 doubles the resolution
+
+    # Continue with regular Streamlit display
     st.plotly_chart(fig, use_container_width=False)
 
     # After creating the efficiency plot, add model selection and radar chart
