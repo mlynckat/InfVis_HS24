@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 import scipy.stats as stats
+from datasets import load_dataset
 
 # Set page config
 st.set_page_config(
@@ -14,7 +15,9 @@ st.set_page_config(
 # Load data
 @st.cache_data
 def load_data():
-    df = pd.read_csv("data/open_llm_leaderboard.csv")
+    # df = pd.read_csv("data/open_llm_leaderboard.csv")
+    dataset = load_dataset("open-llm-leaderboard/contents")
+    df = pd.DataFrame(dataset["train"])
     # Rename columns
     df = df.rename(
         columns={
@@ -77,6 +80,26 @@ filtered_df = filtered_df[
     & (filtered_df["#Params (B)"] != -1)
 ]
 
+# Add Type filter using pills
+st.sidebar.subheader("Model Types")
+available_types = sorted(filtered_df["Type"].unique().tolist())
+selected_types = st.sidebar.pills(
+    "Select Types",
+    options=available_types,
+    selection_mode="multi",
+    default=available_types,
+    help="Filter models by their type classification",
+)
+
+# Apply type filter if any types are selected
+if selected_types:
+    # Convert selected_types to list if it's a single string
+    selected_types_list = (
+        [selected_types] if isinstance(selected_types, str) else selected_types
+    )
+    filtered_df = filtered_df[filtered_df["Type"].isin(selected_types_list)]
+
+# Continue with model family filter
 available_families = filtered_df["Model Family"].unique()
 model_families = ["All"] + sorted(available_families.tolist(), key=str.lower)
 selected_family = st.sidebar.selectbox("Select Model Family", model_families)
@@ -121,6 +144,7 @@ with tab1:
         "Precision",
         "Hub ❤️",
         "Submission Date",
+        "CO₂ cost (kg)",
     ]
 
     # Model properties (categorical)
@@ -194,6 +218,30 @@ with tab1:
             index=0,
         )
 
+    # Create a container for jitter controls
+    jitter_container = st.container()
+    jitter_col1, jitter_col2 = jitter_container.columns([1, 2])
+
+    with jitter_col1:
+        # Add jitter control
+        jitter_enabled = st.checkbox(
+            "Enable jitter",
+            help="Add random noise to data points to reduce overlapping (useful for categorical axes)",
+            value=False,
+        )
+
+    with jitter_col2:
+        # Add jitter amount control
+        jitter_amount = st.slider(
+            "Jitter amount",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.2,
+            step=0.01,
+            disabled=not jitter_enabled,
+            help="Control the amount of random noise added to the data points",
+        )
+
     # Get actual metric names from labels
     x_metric = metric_labels[x_metric_label]
     y_metric = metric_labels[y_metric_label]
@@ -201,9 +249,21 @@ with tab1:
         numeric_metrics[size_metric_label] if size_metric_label != "None" else None
     )
 
+    # Apply jitter if enabled
+    plot_df = filtered_df.copy()
+    if jitter_enabled:
+        if plot_df[x_metric].dtype in ["int64", "float64"]:
+            plot_df[x_metric] = plot_df[x_metric] + np.random.normal(
+                0, jitter_amount, len(plot_df)
+            )
+        if plot_df[y_metric].dtype in ["int64", "float64"]:
+            plot_df[y_metric] = plot_df[y_metric] + np.random.normal(
+                0, jitter_amount, len(plot_df)
+            )
+
     # Create base scatter plot
     scatter_plot_args = {
-        "data_frame": filtered_df,
+        "data_frame": plot_df,  # Use the potentially jittered dataframe
         "x": x_metric,
         "y": y_metric,
         "color": group_by,
@@ -598,35 +658,98 @@ with tab4:
         )
 
     elif analysis_view == "Performance Efficiency":
-        # Calculate efficiency score (performance per billion parameters)
+        # Add controls for thresholds
+        st.subheader("Threshold Controls")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            size_threshold = st.slider(
+                "Size Threshold (percentile)",
+                min_value=5,
+                max_value=95,
+                value=25,
+                step=1,
+                help="Models below this size percentile will be considered. Lower value = smaller models.",
+            )
+
+        with col2:
+            performance_threshold = st.slider(
+                "Performance Threshold (percentile)",
+                min_value=50,
+                max_value=95,
+                value=50,
+                step=5,
+                help="Models above this performance percentile will be considered. Higher value = better performers.",
+            )
+
+        # Calculate efficiency metrics
         efficiency_df = filtered_df.copy()
-        efficiency_df["Efficiency"] = (
+        efficiency_df["Performance per Param"] = (
             efficiency_df["Average ⬆️"] / efficiency_df["#Params (B)"]
         )
 
-        # Find the most efficient models
-        top_efficient = efficiency_df.nlargest(10, "Efficiency")
+        # Calculate percentile ranks
+        efficiency_df["Size_Percentile"] = (
+            efficiency_df["#Params (B)"].rank(pct=True) * 100
+        )
+        efficiency_df["Performance_Percentile"] = (
+            efficiency_df["Average ⬆️"].rank(pct=True) * 100
+        )
 
-        # Create scatter plot with efficiency highlighted
+        # Define "Davids" based on user-selected thresholds
+        davids = efficiency_df[
+            (efficiency_df["Size_Percentile"] <= size_threshold)  # Smaller models
+            & (
+                efficiency_df["Performance_Percentile"] >= performance_threshold
+            )  # Better performers
+        ].sort_values("Performance per Param", ascending=False)
+
+        # Show number of models found
+        st.metric(
+            "Models Found",
+            len(davids),
+            help="Number of models meeting the selected criteria",
+        )
+
+        # Create scatter plot
         fig = px.scatter(
             efficiency_df,
             x="#Params (B)",
             y="Average ⬆️",
-            color="Architecture",
-            hover_data=["Eval Name", "Efficiency"],
-            title="Model Performance vs Size (Highlighting Efficient Models)",
+            color="Type",
+            hover_data=[
+                "Eval Name",
+                "Performance per Param",
+                "Size_Percentile",
+                "Performance_Percentile",
+            ],
+            title="Model Performance vs Size (Highlighting 'David' Models)",
             template="plotly_white",
         )
 
-        # Add annotations for top efficient models
-        for _, model in top_efficient.iterrows():
-            fig.add_annotation(
-                x=model["#Params (B)"],
-                y=model["Average ⬆️"],
-                text=model["Eval Name"],
-                showarrow=True,
-                arrowhead=1,
-            )
+        # Add reference lines for thresholds
+        size_threshold_value = np.percentile(
+            efficiency_df["#Params (B)"], size_threshold
+        )
+        performance_threshold_value = np.percentile(
+            efficiency_df["Average ⬆️"], performance_threshold
+        )
+
+        fig.add_vline(
+            x=size_threshold_value,
+            line_dash="dash",
+            line_color="gray",
+            # annotation_text=f"{size_threshold}th Size Percentile ({size_threshold_value:.1f}B)",
+            annotation_text=f"{size_threshold_value:.1f}B",
+            annotation_position="top",
+        )
+        fig.add_hline(
+            y=performance_threshold_value,
+            line_dash="dash",
+            line_color="gray",
+            annotation_text=f"{100-performance_threshold}th Performance Percentile",
+            annotation_position="right",
+        )
 
         # Add trend line
         fig.add_trace(
@@ -635,24 +758,85 @@ with tab4:
             ).data[1]
         )
 
-        # Add unique key for this plot
-        st.plotly_chart(fig, use_container_width=True, key="efficiency_scatter")
+        fig.update_traces(showlegend=False)
 
-        # Show detailed stats for efficient models
-        st.subheader("Most Efficient Models")
-        st.dataframe(
-            top_efficient[
-                [
-                    "Eval Name",
-                    "#Params (B)",
-                    "Average ⬆️",
-                    "Efficiency",
-                    "Architecture",
-                    "Model Family",
-                ]
-            ].round(2),
-            hide_index=True,
-        )
+        # Highlight top 3 David models if any exist
+        if len(davids) > 0:
+            # Define colors for top 3 models
+            highlight_colors = ["#FFD700", "#C0C0C0", "#CD7F32"]  # Gold, Silver, Bronze
+
+            for i, (_, model) in enumerate(davids.head(3).iterrows()):
+                fig.add_trace(
+                    go.Scatter(
+                        x=[model["#Params (B)"]],
+                        y=[model["Average ⬆️"]],
+                        mode="markers",
+                        marker=dict(
+                            size=15,
+                            color=highlight_colors[i],
+                            line=dict(color="black", width=2),
+                            symbol="circle",
+                        ),
+                        name=f"{model['Eval Name']} (#{i+1})",
+                        hovertemplate=(
+                            "<b>%{customdata[0]}</b><br>"
+                            + "Size: %{x:.1f}B<br>"
+                            + "Score: %{y:.2f}<br>"
+                            + "Efficiency: %{customdata[1]:.2f}<br>"
+                            + "Size Percentile: %{customdata[2]:.1f}<br>"
+                            + "Performance Percentile: %{customdata[3]:.1f}<br>"
+                            + "<extra></extra>"
+                        ),
+                        customdata=[
+                            [
+                                model["Eval Name"],
+                                model["Performance per Param"],
+                                model["Size_Percentile"],
+                                model["Performance_Percentile"],
+                            ]
+                        ],
+                    )
+                )
+
+        fig.update_layout(height=600)
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Show analysis of David models
+        if len(davids) > 0:
+            st.subheader("'David' Models Analysis")
+            st.info(
+                f"""
+                Current criteria for 'David' models:
+                1. Size below the {size_threshold}th percentile (<{size_threshold_value:.1f}B parameters)
+                2. Performance above the {performance_threshold}th percentile (>{performance_threshold_value:.2f} score)
+                3. Ranked by performance-to-parameter ratio
+                
+                Found {len(davids)} models meeting these criteria.
+                """
+            )
+
+            # Display detailed stats for David models
+            st.dataframe(
+                davids[
+                    [
+                        "Eval Name",
+                        "Model Family",
+                        "#Params (B)",
+                        "Average ⬆️",
+                        "Performance per Param",
+                        "Size_Percentile",
+                        "Performance_Percentile",
+                        "Architecture",
+                        "Type",
+                    ]
+                ].round(2),
+                hide_index=True,
+                use_container_width=True,
+            )
+        else:
+            st.warning(
+                "No models found matching the current criteria. Try adjusting the thresholds."
+            )
 
     else:
         # Add option to analyze all architectures or a specific one
