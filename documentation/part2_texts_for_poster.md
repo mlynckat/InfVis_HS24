@@ -8,15 +8,21 @@ Date: 8 December 2024
 
 ## Abstract
 
-We developed an interactive Streamlit app to explore the Open LLM Leaderboard dataset, enabling users to filter models, create visualizations, and analyze performance metrics. Key findings revealed a strong correlation between model size and performance, with diminishing returns as size increases. The app guided the creation of infographics on selecting models for specific GPU configurations and understanding the environmental trade-offs of scaling up. This poster showcases the app’s methodology, tools, and insights.
+We developed an interactive Streamlit app to explore the Open LLM Leaderboard dataset, enabling users to filter models, create visualizations, and analyze performance metrics. A strong positive correlation between model size and performance was revealed. The app guided the creation of infographics on selected models for specific GPU configurations and understanding the environmental trade-offs of scaling up.
 
-## Exploration
+## Exploration & Journey
 
-Using Python, Pandas, and Plotly, we developed an interactive Streamlit app to analyze the Open LLM Leaderboard dataset, enabling dynamic data exploration. The app included several key features, such as interactive filters to sort models by architecture, size, type, or family. Users could also create customizable visualizations, including scatter plots, radar charts, heatmaps, and parallel coordinate plots, with adjustable axes and grouping options. Metric analysis tools allowed for the identification of top-performing models and an evaluation of efficiency through performance-to-parameter ratios. Additionally, the app provided insights through statistical summaries, z-score normalization, and clustering techniques, offering a deeper understanding of the data. This tool played a central role in guiding our exploration and uncovering patterns while validating hypotheses.
+Using Python, Pandas, and Plotly, we developed an interactive Streamlit app to analyze the Open LLM Leaderboard dataset, enabling dynamic data exploration. The app includes several key features, such as filters to sort models by architecture, size, type, or family. It allowed us to create interactive visualizations, including scatter plots, radar charts, heatmaps, and parallel coordinate plots. Additionally, the app provided insights through statistical summaries, z-score normalization, and clustering techniques, offering a deeper understanding of the data. This tool played a central role in guiding our exploration and uncovering patterns while validating hypotheses.
 
-## Journey
+The Open LLM Leaderboard dataset shows performance metrics for large language models. Data exploration revealed patterns in model size, performance, and efficiency. Using the Streamlit App for interactive analysis, two key findings emerged: 1) model parameters strongly correlate with performance across metrics, confirming larger models perform better; 2) performance gains plateau with size increases, showing diminishing returns. Further the deeper investigation of the best performing models and costs of running such models was conducted, resulting in two information graphics.
 
-The Open LLM Leaderboard dataset contains performance metrics for large language models. Through an initial exploration of the data, trends and patterns were identified, particularly in relation to model size, performance, and efficiency. The Streamlit app served as a primary tool for this analysis, allowing for interactive hypothesis testing and a more detailed understanding of the dataset. This exploration led to two key findings. First, there was a strong correlation between the number of parameters in a model and its performance across various metrics, confirming the hypothesis that larger models generally perform better. Second, it became evident that as model sizes increased, the performance gains began to plateau, indicating a threshold beyond which further increases in size resulted in diminishing returns. These findings led us to create the following infographics:
+## The Best LLMs You Can Run on Your GPU: Models for Different VRAM Configurations – Identifying the top-performing models under 13B, 26B, 40B, and 64B parameters to match GPU capabilities.
+
+The first infographic provides a practical guide to model selection based on available GPU VRAM, highlighting the best-performing models for specific parameter thresholds.
+
+## Is it worth paying more for VRAM and produce more CO2?
+
+The second infographic takes a more fine-grained look at the best models. How much performance in which tasks do you gain when you increase the size of the model? And how much more CO2 does it cause? Is it worth it? In most of the cases the answer is No.
 
 ## Learning
 
@@ -24,5 +30,6 @@ Reflecting on this task, we learned the importance of dedicating time to thoroug
 
 ## Sources
 
-“Open LLM Leaderboard”, available at https://huggingface.co/datasets/open-llm-leaderboard/contents
-“Calculating GPU memory for serving LLMs”, available at https://www.substratus.ai/blog/calculating-gpu-memory-for-llm
+Hugging Face. Open LLM Leaderboard. Retrieved from https://huggingface.co/datasets/open-llm-leaderboard/contents
+Substratus AI. Calculating GPU memory for serving LLMs. Retrieved from https://www.substratus.ai/blog/calculating-gpu-memory-for-llm
+Mlynchyk, K., & Schmid, L. Open LLM Leaderboard Explorer [Streamlit app]. Retrieved from https://github.com/mlynckat/InfVis_HS24
